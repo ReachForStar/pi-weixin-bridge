@@ -71,7 +71,7 @@ Windows 开机自启可用 `pm2-windows-startup`（`npm i -g pm2-windows-startup
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | 状态目录（账号凭据、工作区） |
-| `PI_WEIXIN_WORKSPACE` | `<STATE_DIR>/workspace` | pi 会话的工作目录（Agent 在此读写文件） |
+| `PI_WEIXIN_WORKSPACE` | `D:\pi_weixin_project` | pi 会话的工作目录（Agent 在此读写文件） |
 
 ## 项目结构
 
