@@ -1,0 +1,35 @@
+{
+  "name": "pi-weixin-bridge",
+  "version": "1.0.0",
+  "description": "微信 ClawBot ↔ pi 桥接服务（iLink 协议直连，pi SDK 同进程接入）",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "serve": "node dist/index.js"
+  },
+  "keywords": [
+    "weixin",
+    "wechat",
+    "clawbot",
+    "ilink",
+    "pi",
+    "agent",
+    "bridge"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.82.0",
+    "qrcode-terminal": "0.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/qrcode-terminal": "^0.12.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
