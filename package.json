@@ -7,7 +7,12 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "build": "tsc",
-    "serve": "node dist/index.js"
+    "serve": "node dist/index.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop pi-weixin-bridge",
+    "pm2:restart": "pm2 restart pi-weixin-bridge",
+    "pm2:logs": "pm2 logs pi-weixin-bridge",
+    "pm2:save": "pm2 save"
   },
   "keywords": [
     "weixin",
@@ -21,11 +26,13 @@
   "license": "MIT",
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.82.0",
-    "qrcode-terminal": "0.12.0"
+    "qrcode-terminal": "0.12.0",
+    "typebox": "^1.1.38"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/qrcode-terminal": "^0.12.2",
+    "pm2": "^7.0.3",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0"
   },

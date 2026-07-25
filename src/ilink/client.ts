@@ -2,10 +2,14 @@ import crypto from "node:crypto";
 import { CONFIG } from "../config.js";
 import type {
   BaseInfo,
+  GetConfigResp,
   GetUpdatesResp,
+  GetUploadUrlReq,
+  GetUploadUrlResp,
   QRCodeResponse,
   QRStatusResponse,
   SendMessageResp,
+  SendTypingReq,
   WeixinMessage,
 } from "./types.js";
 
@@ -180,5 +184,30 @@ export class IlinkClient {
     if (resp.ret && resp.ret !== 0) {
       throw new Error(`sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`);
     }
+  }
+
+  /** 获取机器人配置（含 typing_ticket） */
+  async getConfig(ilinkUserId: string, contextToken?: string): Promise<GetConfigResp> {
+    const raw = await this.post(
+      "ilink/bot/getconfig",
+      { ilink_user_id: ilinkUserId, context_token: contextToken, base_info: buildBaseInfo() },
+      CONFIG.apiTimeoutMs,
+    );
+    return JSON.parse(raw) as GetConfigResp;
+  }
+
+  /** 发送“正在输入”状态 */
+  async sendTyping(body: SendTypingReq): Promise<void> {
+    await this.post("ilink/bot/sendtyping", { ...body, base_info: buildBaseInfo() }, CONFIG.apiTimeoutMs);
+  }
+
+  /** 获取 CDN 上传预签名 URL */
+  async getUploadUrl(req: GetUploadUrlReq): Promise<GetUploadUrlResp> {
+    const raw = await this.post(
+      "ilink/bot/getuploadurl",
+      { ...req, base_info: buildBaseInfo() },
+      CONFIG.apiTimeoutMs,
+    );
+    return JSON.parse(raw) as GetUploadUrlResp;
   }
 }

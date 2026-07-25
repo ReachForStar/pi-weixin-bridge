@@ -23,6 +23,8 @@ export const WORKSPACE = process.env.PI_WEIXIN_WORKSPACE || join(STATE_DIR, "wor
 export const CONFIG = {
   /** iLink 固定接入域名（扫码登录始终用它） */
   fixedBaseUrl: "https://ilinkai.weixin.qq.com",
+  /** 微信 CDN 域名（媒体上传/下载） */
+  cdnBaseUrl: "https://novac2c.cdn.weixin.qq.com/c2c",
   ilinkAppId: "bot",
   ilinkAppClientVersion: buildClientVersion(CHANNEL_VERSION),
   channelVersion: CHANNEL_VERSION,
