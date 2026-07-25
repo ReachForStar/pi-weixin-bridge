@@ -1,5 +1,6 @@
 node_modules/
 dist/
+logs/
 *.log
 state/
 .DS_Store
