@@ -2,6 +2,11 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] - 2026-07-26
+
+### Fixed
+- 修复 CI 自动发布的 npm 令牌配置（Secret 尾随换行符导致发布 404），验证 bump→push→发 npm→建 Release 全自动流程。
+
 ## [1.0.1] - 2026-07-26
 
 ### Changed

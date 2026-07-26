@@ -1,6 +1,6 @@
 {
   "name": "pi-weixin-bridge",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "微信 ClawBot ↔ pi 桥接服务（iLink 协议直连）| Bridge service connecting the pi coding agent to WeChat ClawBot via the iLink protocol",
   "type": "module",
   "main": "dist/index.js",
