@@ -2,6 +2,11 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] - 2026-07-26
+
+### Added
+- `update` 命令：更新到最新版（git 安装走 git pull + npm install + pm2 restart；npx 安装提示重跑安装命令）。
+
 ## [1.3.0] - 2026-07-26
 
 ### Added
