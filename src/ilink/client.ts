@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { CONFIG } from "../config.js";
+import { AuthError, NetworkError, ProtocolError, SessionTimeoutError, classifyFetchError } from "./errors.js";
 import type {
   BaseInfo,
   GetConfigResp,
@@ -12,6 +13,9 @@ import type {
   SendTypingReq,
   WeixinMessage,
 } from "./types.js";
+
+// 保留 SessionTimeoutError 导出以兼容旧调用方（现来自 errors.ts）
+export { SessionTimeoutError };
 
 /** X-WECHAT-UIN：随机 uint32 → 十进制字符串 → base64 */
 function randomWechatUin(): string {
@@ -50,12 +54,13 @@ function ensureTrailingSlash(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
 }
 
-/** 会话超时错误（errcode -14），上层捕获后触发重新登录 */
-export class SessionTimeoutError extends Error {
-  constructor() {
-    super("iLink session timeout (errcode -14)");
-    this.name = "SessionTimeoutError";
+/** 将 HTTP 非 2xx 响应归类为 AuthError（401/403）或 ProtocolError */
+function httpError(endpoint: string, status: number, body: string): AuthError | ProtocolError {
+  const snippet = body.slice(0, 200);
+  if (status === 401 || status === 403) {
+    return new AuthError(`${endpoint} 鉴权失败 HTTP ${status}: ${snippet}`);
   }
+  return new ProtocolError(`${endpoint} HTTP ${status}: ${snippet}`, undefined, status);
 }
 
 export class IlinkClient {
@@ -93,20 +98,25 @@ export class IlinkClient {
     // 合并外部 signal（停止服务时立即中断长轮询）
     const onExternalAbort = () => controller.abort();
     signal?.addEventListener("abort", onExternalAbort, { once: true });
+    let res: Response;
     try {
-      const res = await fetch(url.toString(), {
+      res = await fetch(url.toString(), {
         method: "POST",
         headers: buildPostHeaders(this.token),
         body: JSON.stringify(body),
         signal: controller.signal,
       });
-      const text = await res.text();
-      if (!res.ok) throw new Error(`POST ${endpoint} HTTP ${res.status}: ${text.slice(0, 200)}`);
-      return text;
+    } catch (err) {
+      // AbortError（超时/外部中断）原样抛出由调用方处理；其余归类为网络错误
+      if ((err as Error)?.name === "AbortError") throw err;
+      throw classifyFetchError(err);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onExternalAbort);
     }
+    const text = await res.text();
+    if (!res.ok) throw httpError(`POST ${endpoint}`, res.status, text);
+    return text;
   }
 
   /** GET 通用封装（仅公共头） */
@@ -114,18 +124,22 @@ export class IlinkClient {
     const url = new URL(endpoint, ensureTrailingSlash(baseUrl));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res: Response;
     try {
-      const res = await fetch(url.toString(), {
+      res = await fetch(url.toString(), {
         method: "GET",
         headers: buildCommonHeaders(),
         signal: controller.signal,
       });
-      const text = await res.text();
-      if (!res.ok) throw new Error(`GET ${endpoint} HTTP ${res.status}: ${text.slice(0, 200)}`);
-      return text;
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError") throw err;
+      throw classifyFetchError(err);
     } finally {
       clearTimeout(timer);
     }
+    const text = await res.text();
+    if (!res.ok) throw httpError(`GET ${endpoint}`, res.status, text);
+    return text;
   }
 
   /** 获取登录二维码（始终用固定域名，无需 token） */
@@ -182,7 +196,8 @@ export class IlinkClient {
     );
     const resp = JSON.parse(raw) as SendMessageResp;
     if (resp.ret && resp.ret !== 0) {
-      throw new Error(`sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`);
+      if (resp.ret === -14) throw new SessionTimeoutError();
+      throw new ProtocolError(`sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`, resp.ret);
     }
   }
 

@@ -162,8 +162,14 @@ async function uploadBufferToCdn(params: {
   return downloadParam;
 }
 
-/** 上传本地图片到微信 CDN，返回构造发送消息所需信息 */
-export async function uploadImage(client: IlinkClient, filePath: string, toUserId: string): Promise<UploadedInfo> {
+/** 通用媒体上传：上传本地文件到微信 CDN，返回构造发送消息所需信息。
+ *  mediaType 取自 UploadMediaType（IMAGE/VIDEO/FILE/VOICE）。 */
+export async function uploadMedia(
+  client: IlinkClient,
+  filePath: string,
+  toUserId: string,
+  mediaType: (typeof UploadMediaType)[keyof typeof UploadMediaType],
+): Promise<UploadedInfo> {
   const plaintext = await readFile(filePath);
   const rawsize = plaintext.length;
   const rawfilemd5 = createHash("md5").update(plaintext).digest("hex");
@@ -173,7 +179,7 @@ export async function uploadImage(client: IlinkClient, filePath: string, toUserI
 
   const resp = await client.getUploadUrl({
     filekey,
-    media_type: UploadMediaType.IMAGE,
+    media_type: mediaType,
     to_user_id: toUserId,
     rawsize,
     rawfilemd5,
@@ -198,4 +204,19 @@ export async function uploadImage(client: IlinkClient, filePath: string, toUserI
     fileSize: rawsize,
     fileSizeCiphertext: filesize,
   };
+}
+
+/** 上传本地图片（uploadMedia 的 IMAGE 包装） */
+export async function uploadImage(client: IlinkClient, filePath: string, toUserId: string): Promise<UploadedInfo> {
+  return uploadMedia(client, filePath, toUserId, UploadMediaType.IMAGE);
+}
+
+/** 上传本地文件（uploadMedia 的 FILE 包装） */
+export async function uploadFile(client: IlinkClient, filePath: string, toUserId: string): Promise<UploadedInfo> {
+  return uploadMedia(client, filePath, toUserId, UploadMediaType.FILE);
+}
+
+/** 上传本地视频（uploadMedia 的 VIDEO 包装） */
+export async function uploadVideo(client: IlinkClient, filePath: string, toUserId: string): Promise<UploadedInfo> {
+  return uploadMedia(client, filePath, toUserId, UploadMediaType.VIDEO);
 }

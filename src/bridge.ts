@@ -1,36 +1,31 @@
-import crypto from "node:crypto";
 import { IlinkClient, SessionTimeoutError } from "./ilink/client.js";
-import {
-  MessageType,
-  MessageItemType,
-  MessageState,
-  TypingStatus,
-  type MessageItem,
-  type WeixinMessage,
-} from "./ilink/types.js";
-import { downloadInboundMedia, uploadImage, type UploadedInfo } from "./ilink/media.js";
-import { extractText } from "./ilink/message.js";
+import { AuthError, ProtocolError } from "./ilink/errors.js";
+import { MessageType, TypingStatus, type WeixinMessage } from "./ilink/types.js";
+import { downloadInboundMedia, uploadImage } from "./ilink/media.js";
+import { ContextStore } from "./ilink/context-store.js";
+import { parseIncomingMessage } from "./message/parser.js";
+import { buildImageMessage, buildTextMessage } from "./message/builder.js";
+import { chunkText } from "./message/markdown.js";
 import { PiSessionManager, type ReplyContext } from "./pi/sessions.js";
 import { CONFIG } from "./config.js";
+import { logger } from "./logger/index.js";
 
-function generateClientId(): string {
-  return `pi-weixin-bridge:${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
-}
+/** typing ticket 缓存时长（过期后重新 getconfig 获取） */
+const TICKET_TTL_MS = 50 * 60 * 1000;
 
 export class Bridge {
   private getUpdatesBuf = "";
   private consecutiveFailures = 0;
-  /** 按用户缓存 typing_ticket（getConfig 取得） */
-  private typingTickets = new Map<string, string>();
 
   constructor(
     private client: IlinkClient,
     private pi: PiSessionManager,
+    private contextStore: ContextStore,
   ) {}
 
   async run(signal: AbortSignal): Promise<void> {
     let nextTimeout = CONFIG.longPollTimeoutMs;
-    console.log("[bridge] 消息循环已启动，等待微信消息...");
+    logger.info("[bridge] 消息循环已启动，等待微信消息...");
     while (!signal.aborted) {
       try {
         const resp = await this.client.getUpdates(this.getUpdatesBuf, nextTimeout, signal);
@@ -39,7 +34,7 @@ export class Bridge {
         // 会话超时 → 向上抛出触发重新登录
         if (resp.errcode === -14) throw new SessionTimeoutError();
         if (resp.ret && resp.ret !== 0) {
-          throw new Error(`getUpdates ret=${resp.ret} errcode=${resp.errcode} errmsg=${resp.errmsg ?? ""}`);
+          throw new ProtocolError(`getUpdates ret=${resp.ret} errmsg=${resp.errmsg ?? ""}`, resp.errcode);
         }
 
         this.consecutiveFailures = 0;
@@ -48,31 +43,32 @@ export class Bridge {
 
         for (const msg of resp.msgs ?? []) {
           // 逐条异步处理，单条失败不影响循环
-          this.handleMessage(msg).catch((err) =>
-            console.error(`[bridge] 消息处理失败: ${String(err)}`),
-          );
+          this.handleMessage(msg).catch((err) => logger.error(`[bridge] 消息处理失败: ${String(err)}`));
         }
       } catch (err) {
         if (signal.aborted) break;
-        if (err instanceof SessionTimeoutError) throw err;
+        // 会话超时 / 鉴权失效 → 向上抛出触发重新登录
+        if (err instanceof SessionTimeoutError || err instanceof AuthError) throw err;
         this.consecutiveFailures++;
         const backoff = this.consecutiveFailures >= 5 ? 30_000 : 3_000;
-        console.error(
+        logger.error(
           `[bridge] getUpdates 错误（连续 ${this.consecutiveFailures} 次），${backoff / 1000}s 后重试: ${String(err)}`,
         );
         await new Promise((r) => setTimeout(r, backoff));
       }
     }
-    console.log("[bridge] 消息循环已退出。");
+    logger.info("[bridge] 消息循环已退出。");
   }
 
-  /** 获取并缓存用户的 typing_ticket */
+  /** 获取 typing ticket：优先用 contextStore 缓存（未过期），否则 getconfig 刷新 */
   private async getTypingTicket(userId: string, contextToken?: string): Promise<string | undefined> {
-    const cached = this.typingTickets.get(userId);
+    const cached = this.contextStore.getTypingTicket(userId);
     if (cached) return cached;
     try {
       const resp = await this.client.getConfig(userId, contextToken);
-      if (resp.typing_ticket) this.typingTickets.set(userId, resp.typing_ticket);
+      if (resp.typing_ticket) {
+        this.contextStore.setTypingTicket(userId, resp.typing_ticket, TICKET_TTL_MS);
+      }
       return resp.typing_ticket;
     } catch {
       return undefined;
@@ -90,48 +86,26 @@ export class Bridge {
     }
   }
 
-  /** 构造并发送图片消息 */
-  private async sendImageMessage(to: string, contextToken: string | undefined, uploaded: UploadedInfo): Promise<void> {
-    const imageItem: MessageItem = {
-      type: MessageItemType.IMAGE,
-      image_item: {
-        media: {
-          encrypt_query_param: uploaded.downloadEncryptedQueryParam,
-          // aes_key 字段为 base64(hex 字符串的 ASCII)，与入站 parseAesKey 的 hex 分支对应
-          aes_key: Buffer.from(uploaded.aeskeyHex).toString("base64"),
-          encrypt_type: 1,
-        },
-        mid_size: uploaded.fileSizeCiphertext,
-      },
-    };
-    await this.client.sendMessage({
-      from_user_id: "",
-      to_user_id: to,
-      client_id: generateClientId(),
-      message_type: MessageType.BOT,
-      message_state: MessageState.FINISH,
-      item_list: [imageItem],
-      context_token: contextToken,
-    });
-  }
-
   private async handleMessage(msg: WeixinMessage): Promise<void> {
     // 仅处理入站用户消息（跳过机器人自身消息，防止循环）
     if (msg.message_type !== MessageType.USER) return;
 
-    const from = msg.from_user_id ?? "";
-    const key = msg.session_id || from;
-    const contextToken = msg.context_token;
+    const incoming = parseIncomingMessage(msg);
+    const from = incoming.fromUserId;
+    const key = incoming.sessionId || from;
+    const contextToken = incoming.contextToken;
+
+    // 持久化 context_token（用于回复与主动推送，重启可恢复）
+    if (contextToken) this.contextStore.setContextToken(from, contextToken);
 
     // 入站媒体：图片转 base64 供 pi 视觉；文件/视频落盘并以说明注入
     const media = await downloadInboundMedia(msg.item_list);
-    const text = extractText(msg.item_list);
-    let promptText = text;
+    let promptText = incoming.text;
     if (media.notes.length) promptText = [promptText, ...media.notes].filter(Boolean).join("\n");
     if (!promptText.trim() && media.images.length) promptText = "请查看这张图片。";
     if (!promptText.trim()) return;
 
-    console.log(
+    logger.info(
       `[in] ${from}: ${promptText.slice(0, 80)}${media.images.length ? `（+${media.images.length} 张图片）` : ""}`,
     );
 
@@ -142,7 +116,7 @@ export class Bridge {
     const replyContext: ReplyContext = {
       sendImage: async (path: string) => {
         const uploaded = await uploadImage(this.client, path, from);
-        await this.sendImageMessage(from, contextToken, uploaded);
+        await this.client.sendMessage(buildImageMessage(uploaded, { to: from, contextToken }));
       },
     };
 
@@ -155,18 +129,13 @@ export class Bridge {
     }
 
     if (!reply) {
-      console.log("[out]（空回复，跳过发送）");
+      logger.info("[out]（空回复，跳过发送）");
       return;
     }
-    console.log(`[out] → ${from}: ${reply.length > 80 ? `${reply.slice(0, 80)}…` : reply}`);
-    await this.client.sendMessage({
-      from_user_id: "",
-      to_user_id: from,
-      client_id: generateClientId(),
-      message_type: MessageType.BOT,
-      message_state: MessageState.FINISH,
-      item_list: [{ type: MessageItemType.TEXT, text_item: { text: reply } }],
-      context_token: contextToken,
-    });
+    logger.info(`[out] → ${from}: ${reply.length > 80 ? `${reply.slice(0, 80)}…` : reply}`);
+    // 长文本分块发送，避免超出微信单条消息长度限制
+    for (const chunk of chunkText(reply)) {
+      await this.client.sendMessage(buildTextMessage(chunk, { to: from, contextToken }));
+    }
   }
 }
