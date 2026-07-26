@@ -62,7 +62,16 @@ npm run pm2:stop        # 停止
 
 会话过期（errcode -14）需重新扫码时：`npm run pm2:stop` → `npm start` 扫码 → `npm run pm2:start`。
 
-Windows 开机自启可用 `pm2-windows-startup`（`npm i -g pm2-windows-startup && pm2-startup install`）或任务计划程序。
+### 隐藏窗口启动（不弹终端框）
+
+PM2 守护进程与应用进程均带 `windowsHide`，本身不弹窗；启动时弹出的终端框来自运行启动命令的窗口。用 VBS 隐藏启动可全程无可见窗口：
+
+- 双击 `start-service.vbs` → 后台启动（无终端框）
+- 双击 `stop-service.vbs` → 停止
+
+> VBS 必须为纯 ASCII（不能含中文注释），否则 VBScript 按 GBK 解析 UTF-8 会报 800A01A8。
+
+开机自启：把 `start-service.vbs` 的快捷方式放入启动目录（`shell:startup`）或用任务计划程序。Windows 服务方式可用 `pm2-windows-startup`（`npm i -g pm2-windows-startup && pm2-startup install`）。
 
 ## 配置
 
