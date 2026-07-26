@@ -3,6 +3,7 @@ import {
   defineTool,
   ModelRuntime,
   SessionManager,
+  SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -30,11 +31,15 @@ export class PiSessionManager {
   private locks = new Map<string, Promise<void>>();
   private replyContexts = new Map<string, ReplyContext>();
   private modelRuntime?: ModelRuntime;
+  private settingsManager?: SettingsManager;
 
   async init(): Promise<void> {
     mkdirSync(WORKSPACE, { recursive: true });
     // 复用用户 ~/.pi/agent 下的模型与鉴权配置
     this.modelRuntime = await ModelRuntime.create();
+    // 桥接需要图片视觉能力：覆盖全局 blockImages（深合并，不影响用户全局设置）
+    this.settingsManager = SettingsManager.create(WORKSPACE);
+    this.settingsManager.applyOverrides({ images: { blockImages: false } });
   }
 
   /** 每个会话注册一个 send_weixin_image 工具，闭包绑定会话 key 以取用对应回复上下文 */
@@ -73,6 +78,7 @@ export class PiSessionManager {
         cwd: WORKSPACE,
         sessionManager: SessionManager.inMemory(WORKSPACE),
         modelRuntime: this.modelRuntime,
+        settingsManager: this.settingsManager,
         customTools: [this.createSendImageTool(key)],
       });
       session = created;
