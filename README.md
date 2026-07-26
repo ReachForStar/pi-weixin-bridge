@@ -31,6 +31,30 @@
 
 ## 安装与运行
 
+### 一键安装（推荐，对标 openclaw-weixin-cli）
+
+```bash
+npx -y pi-weixin-bridge install
+# 未发布到 npm 时可用 git 源：
+npx -y github:MindFlowLab/pi-weixin-bridge install
+```
+
+`install` 会依次：① 显示二维码供微信扫码绑定（已有账号则跳过）→ ② 配置 PM2 常驻服务并保存 → ③ 生成隐藏窗口启动/停止快捷方式。
+
+### CLI 命令
+
+```bash
+pi-weixin-bridge install     # 一键安装（扫码绑定 + PM2 + 快捷方式）
+pi-weixin-bridge login       # 扫码登录 / 重新绑定微信
+pi-weixin-bridge start       # 前台运行桥接服务（默认）
+pi-weixin-bridge stop        # 停止 PM2 服务
+pi-weixin-bridge status      # 查看 PM2 服务状态
+pi-weixin-bridge uninstall   # 卸载（删 PM2 服务与快捷方式，保留账号）
+pi-weixin-bridge help        # 帮助
+```
+
+### 手动安装（clone 源码）
+
 ```bash
 git clone https://github.com/MindFlowLab/pi-weixin-bridge.git
 cd pi-weixin-bridge

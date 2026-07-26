@@ -1,23 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { ACCOUNT_FILE, CONFIG, STATE_DIR } from "./config.js";
+import { CONFIG } from "./config.js";
 import { IlinkClient, SessionTimeoutError } from "./ilink/client.js";
 import { loginWithQR, type AccountState } from "./ilink/login.js";
+import { loadState, saveState } from "./account.js";
 import { PiSessionManager } from "./pi/sessions.js";
 import { Bridge } from "./bridge.js";
-
-function loadState(): AccountState | null {
-  if (!existsSync(ACCOUNT_FILE)) return null;
-  try {
-    return JSON.parse(readFileSync(ACCOUNT_FILE, "utf8")) as AccountState;
-  } catch {
-    return null;
-  }
-}
-
-function saveState(state: AccountState): void {
-  mkdirSync(STATE_DIR, { recursive: true });
-  writeFileSync(ACCOUNT_FILE, JSON.stringify(state, null, 2), "utf8");
-}
 
 async function doLogin(client: IlinkClient): Promise<AccountState> {
   console.log("[main] 开始扫码登录...");
