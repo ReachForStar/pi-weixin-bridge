@@ -5,9 +5,9 @@ module.exports = {
   apps: [
     {
       name: "pi-weixin-bridge",
-      // 通过 tsx CLI 直接运行 TS 源码，免去构建步骤
-      script: "node_modules/tsx/dist/cli.mjs",
-      args: "src/index.ts",
+      // 用 bin 包装器运行：其经 tsx/esm/api 在进程内注册并 import TS 源码，
+      // 不像 tsx CLI 那样额外派生子 node 进程（那个子进程无 windowsHide，会在 Windows 启动时弹控制台框）。
+      script: "bin/pi-weixin-bridge.js",
       cwd: __dirname,
       interpreter: "node",
       // fork 模式直接运行脚本（cluster 会包裹进程，与 tsx CLI 启动器不兼容，且影响 stdin 扫码）
