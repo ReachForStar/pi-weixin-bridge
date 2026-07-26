@@ -42,6 +42,21 @@ npm start
 
 首次运行：终端显示二维码 → 用微信扫码 → 确认后连接成功。账号凭据保存到 `~/.pi-weixin-bridge/account.json`，之后重启自动复用，无需重复扫码（会话过期时会自动要求重新扫码）。
 
+### 通过 npx 直接安装/运行
+
+本包带 `bin` 入口（经 `tsx/esm/api` 运行 TS 源码，免构建），可用 npx 直接跑：
+
+```bash
+# 从 git 仓库直接运行（首次同样需扫码登录）
+npx github:MindFlowLab/pi-weixin-bridge
+
+# 或全局安装后用命令运行
+npm install -g github:MindFlowLab/pi-weixin-bridge
+pi-weixin-bridge
+```
+
+> npx 方式适合临时运行/测试；长期后台服务仍推荐下面的 PM2 方式（自动重启、日志、开机自启）。
+
 ### PM2 常驻部署
 
 > 重要：守护进程无法扫码，须**先交互式登录一次**（`npm start` 扫码，账号落盘），再用 PM2 拉起。
