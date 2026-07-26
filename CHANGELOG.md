@@ -2,6 +2,18 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-07-26
+
+### Added
+- context_token / typing ticket 持久化（`ContextStore`，重启可恢复，支持主动推送）。
+- 分级日志（`src/logger/`，info/warn/error/debug + ISO 时间戳，`LOG_LEVEL` 控制）。
+- 错误类型分类（`src/ilink/errors.ts`：Network/Auth/Protocol/SessionTimeout），鉴权失效（401/403）自动触发重登。
+- 出站媒体：泛型 `uploadMedia` + 文件/视频上传，`builder` 新增文件/视频消息构造。
+- markdown 辅助（`src/message/markdown.ts`：格式化/转义/长文本分块），回复超长自动分块发送。
+- 消息构造/解析模块化（`src/message/builder.ts` + `parser.ts`）。
+- 文档：`docs/architecture.md`、`docs/protocol.md`；示例 `examples/echo-bot.ts`。
+- 新增模块单元测试（parser/builder/markdown/context-store）。
+
 ## [1.1.0] - 2026-07-26
 
 ### Added
