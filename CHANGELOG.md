@@ -4,6 +4,8 @@
 
 ## [1.0.0] - 2026-07-26
 
+> 已发布到 npm：[`pi-weixin-bridge`](https://www.npmjs.com/package/pi-weixin-bridge)，可 `npx -y pi-weixin-bridge install` 一键安装。
+
 ### Added
 - 微信 ClawBot ↔ pi 桥接服务核心：iLink 协议直连（扫码登录、长轮询收消息、发消息）。
 - 入站媒体处理：图片解密转 base64 供 pi 视觉理解，语音用服务端转文字，文件/视频解密落盘。

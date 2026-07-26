@@ -1,6 +1,7 @@
 # pi-weixin-bridge
 
 [![CI](https://github.com/ReachForStar/pi-weixin-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ReachForStar/pi-weixin-bridge/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/pi-weixin-bridge.svg)](https://www.npmjs.com/package/pi-weixin-bridge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node](https://img.shields.io/badge/Node-%3E%3D18-339933.svg)](https://nodejs.org)
 
@@ -39,7 +40,7 @@
 
 ```bash
 npx -y pi-weixin-bridge install
-# 未发布到 npm 时可用 git 源：
+# 也可从 git 源安装（含最新未发布改动）：
 npx -y github:ReachForStar/pi-weixin-bridge install
 ```
 
@@ -72,15 +73,18 @@ npm start
 
 ### 通过 npx 直接安装/运行
 
-本包带 `bin` 入口（经 `tsx/esm/api` 运行 TS 源码，免构建），可用 npx 直接跑：
+本包已发布到 [npm](https://www.npmjs.com/package/pi-weixin-bridge)，带 `bin` 入口（经 `tsx/esm/api` 运行 TS 源码，免构建），可用 npx 直接跑：
 
 ```bash
-# 从 git 仓库直接运行（首次同样需扫码登录）
-npx github:ReachForStar/pi-weixin-bridge
+# 从 npm 直接运行（首次同样需扫码登录）
+npx -y pi-weixin-bridge
 
 # 或全局安装后用命令运行
-npm install -g github:ReachForStar/pi-weixin-bridge
+npm install -g pi-weixin-bridge
 pi-weixin-bridge
+
+# 也可从 git 源运行（含最新未发布改动）
+npx -y github:ReachForStar/pi-weixin-bridge
 ```
 
 > npx 方式适合临时运行/测试；长期后台服务仍推荐下面的 PM2 方式（自动重启、日志、开机自启）。
