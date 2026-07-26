@@ -1,0 +1,78 @@
+name: NPM Token Health Check
+
+# 定时检查 NPM_TOKEN 是否临期/失效，自动创建 issue 提醒重新生成。
+# 每周一 09:00 UTC 运行，也可手动触发。
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  check-token:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+
+      # 综合判断：日期临期（提前 14 天预警）+ whoami 实测有效性
+      - name: Evaluate token status
+        id: eval
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # 令牌到期日（90 天）。重新生成令牌后请同步更新此日期。
+          TOKEN_EXPIRES: "2026-10-24"
+          WARN_DAYS: "14"
+        run: |
+          TODAY=$(date +%s)
+          EXPIRES=$(date -d "$TOKEN_EXPIRES" +%s)
+          WARN_AT=$((EXPIRES - WARN_DAYS * 86400))
+          # whoami 实测令牌是否仍有效
+          if npm whoami >/dev/null 2>&1; then WHOAMI=valid; else WHOAMI=invalid; fi
+          echo "whoami=$WHOAMI"
+
+          if [ "$WHOAMI" = "invalid" ]; then
+            echo "status=expired" >> "$GITHUB_OUTPUT"        # 已失效（到期或被吊销）
+          elif [ "$TODAY" -gt "$EXPIRES" ]; then
+            echo "status=expired" >> "$GITHUB_OUTPUT"        # 已过到期日
+          elif [ "$TODAY" -gt "$WARN_AT" ]; then
+            echo "status=expiring" >> "$GITHUB_OUTPUT"       # 临期（14 天内）
+          else
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create reminder issue if needed
+        if: steps.eval.outputs.status != 'ok'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const status = "${{ steps.eval.outputs.status }}";
+            const label = "npm-token-expired";
+            // 避免重复：已存在同类未关闭 issue 则跳过
+            const existing = await github.rest.issues.listForRepo({ owner, repo, state: "open", labels: label });
+            if (existing.data.length > 0) {
+              console.log("已存在同类提醒 issue，跳过创建");
+              return;
+            }
+            const expired = status === "expired";
+            await github.rest.issues.create({
+              owner, repo,
+              title: expired ? "🔴 NPM_TOKEN 已失效，自动发布将失败" : "🟡 NPM_TOKEN 即将到期，请尽快更新",
+              labels: [label],
+              body: [
+                expired
+                  ? "CI 检测到 **NPM_TOKEN 已失效**（到期或被吊销），push 自动发布到 npm 会失败。"
+                  : "CI 检测到 **NPM_TOKEN 即将到期**（14 天内），请尽快更新以免影响自动发布。",
+                "",
+                "重新生成步骤：",
+                "1. 打开 https://www.npmjs.com/settings/reachforstar/tokens",
+                "2. Generate New Token → **Granular Access Token**",
+                "3. 勾选 **bypass 2FA**、Packages 选 Read and write、有效期 90 天",
+                "4. 更新本仓库 Settings → Secrets and variables → Actions 中的 `NPM_TOKEN`",
+                "5. 同步更新 `.github/workflows/npm-token-check.yml` 里的 `TOKEN_EXPIRES` 日期",
+              ].join("\n"),
+            });
