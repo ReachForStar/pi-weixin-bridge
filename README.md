@@ -147,21 +147,32 @@ powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-se
 
 ```
 src/
-├── index.ts          # 入口：登录、状态持久化、会话超时重登、优雅退出
+├── index.ts          # 入口：登录、状态持久化、会话超时/鉴权失效重登、优雅退出
 ├── cli.ts            # CLI 命令（install/login/start/stop/status/uninstall/help）
 ├── account.ts        # 账号凭据读写
 ├── config.ts         # 协议常量与路径配置
 ├── bridge.ts         # 主循环：getUpdates → 媒体 → pi → sendMessage，typing 状态
+├── logger/           # 分级日志（info/warn/error/debug + 时间戳）
 ├── ilink/
 │   ├── types.ts      # iLink 协议类型与枚举
-│   ├── client.ts     # HTTP 客户端（请求头、长轮询、收发、getconfig/sendtyping/getuploadurl）
+│   ├── client.ts     # HTTP 客户端（请求头、长轮询、收发、typed errors）
+│   ├── errors.ts     # 错误类型（Network/Auth/Protocol/SessionTimeout）
 │   ├── login.ts      # 扫码登录流程（含重定向、配对码、过期刷新）
+│   ├── context-store.ts # context_token / typing ticket 持久化
 │   ├── message.ts    # 消息正文提取（文本 / 语音转文字）
-│   └── media.ts      # 媒体：AES 加解密、CDN 上传下载、入站解析、出站图片上传
+│   └── media.ts      # 媒体：AES 加解密、CDN 上传下载、入站解析、出站媒体上传
+├── message/          # 消息构造 / 解析
+│   ├── parser.ts     # 入站消息解析
+│   ├── builder.ts    # 出站消息构造（文本/图片/文件/视频）
+│   └── markdown.ts   # markdown 格式化 / 转义 / 分块
 └── pi/
     └── sessions.ts   # pi 会话管理（按微信会话隔离 + 串行化 + 发图工具）
-test/                 # 单元测试（vitest：AES 加解密、消息提取、iLink 请求构造）
+docs/                 # 架构与协议文档
+examples/             # 示例（echo-bot）
+test/                 # 单元测试（vitest）
 ```
+
+详细设计见 [docs/architecture.md](docs/architecture.md) 与 [docs/protocol.md](docs/protocol.md)；最小示例见 [examples/echo-bot.ts](examples/echo-bot.ts)。
 
 ## iLink 协议要点
 
@@ -178,9 +189,12 @@ test/                 # 单元测试（vitest：AES 加解密、消息提取、i
 - ✅ 按微信会话隔离的 pi 多会话 + 串行化
 - ✅ 「正在输入」状态提示（getconfig + sendtyping）
 - ✅ 入站媒体：图片（解密→pi 视觉）、语音（服务端转文字）、文件/视频（解密落盘→告知路径）
-- ✅ 出站图片：pi 调用 `send_weixin_image` 工具上传发送本地图片
+- ✅ 出站媒体：图片/文件/视频经 CDN 上传后发送（`send_weixin_image` 工具 + builder）
+- ✅ 长文本分块发送（markdown 分块，避免超出微信单条长度）
+- ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
+- ✅ context_token / typing ticket 持久化（重启恢复）
 - ✅ PM2 常驻部署（fork 模式）
-- ⬜ 出站语音/文件/视频、斜杠命令、长文本分段发送
+- ⬜ 出站语音（需 silk 编码）、斜杠命令
 
 ## ⚠️ 安全提示
 
