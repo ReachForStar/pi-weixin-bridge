@@ -2,6 +2,14 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-07-26
+
+### Added
+- 新增 NOTICE 文件，补充腾讯 MIT 版权声明（iLink 客户端衍生自 Tencent/openclaw-weixin），满足 MIT 衍生归属要求。
+
+### Changed
+- LICENSE 注明衍生关系；NOTICE 纳入 npm 包分发；README 许可章节补充归属说明。
+
 ## [1.0.1] - 2026-07-26
 
 > 已发布到 npm：[`pi-weixin-bridge`](https://www.npmjs.com/package/pi-weixin-bridge)，可 `npx -y pi-weixin-bridge install` 一键安装。
