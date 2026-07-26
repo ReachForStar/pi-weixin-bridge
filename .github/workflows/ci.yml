@@ -34,11 +34,13 @@ jobs:
       - name: Build
         run: npm run build
 
-  # 发布：仅在 push 到 main 且测试通过后运行；版本号未发布过才发布
+  # 发布：仅在 push 到 main 且测试通过后运行；版本号未发布过才发布 npm，随后自动建 GitHub Release
   publish:
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 创建 GitHub Release 需要
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +57,7 @@ jobs:
         id: check
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if npm view "pi-weixin-bridge@$VERSION" version >/dev/null 2>&1; then
             echo "skip=yes" >> "$GITHUB_OUTPUT"
             echo "版本 $VERSION 已发布到 npm，跳过发布"
@@ -68,3 +71,12 @@ jobs:
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.skip == 'no'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${{ steps.check.outputs.version }}
+          node scripts/extract-changelog.mjs "$VERSION" > release-notes.md
+          gh release create "v$VERSION" --title "v$VERSION" --notes-file release-notes.md
