@@ -13,6 +13,7 @@
     "ecosystem.config.cjs",
     "README.md",
     "LICENSE",
+    "NOTICE",
     "CHANGELOG.md"
   ],
   "scripts": {

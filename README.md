@@ -212,4 +212,4 @@ CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 2
 
 ## 许可
 
-MIT
+[MIT](./LICENSE)。本项目的 iLink 协议客户端（`src/ilink/`）衍生自腾讯开源的 [`Tencent/openclaw-weixin`](https://github.com/Tencent/openclaw-weixin)（MIT 许可，Copyright Tencent），完整归属与原始许可证见 [NOTICE](./NOTICE)。
