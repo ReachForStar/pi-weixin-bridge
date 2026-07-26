@@ -1,5 +1,9 @@
 # pi-weixin-bridge
 
+[![CI](https://github.com/ReachForStar/pi-weixin-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ReachForStar/pi-weixin-bridge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node](https://img.shields.io/badge/Node-%3E%3D18-339933.svg)](https://nodejs.org)
+
 把 **pi**（编码 Agent）接入**微信 ClawBot** 的桥接服务。直连腾讯官方 **iLink 协议**，不依赖 OpenClaw，pi 通过 SDK 同进程接入。
 
 在微信里给 ClawBot 发消息，即由 pi 处理并回复——把 pi 的全部能力（含 skills、工具）带到微信聊天界面。
@@ -138,15 +142,19 @@ powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-se
 ```
 src/
 ├── index.ts          # 入口：登录、状态持久化、会话超时重登、优雅退出
+├── cli.ts            # CLI 命令（install/login/start/stop/status/uninstall/help）
+├── account.ts        # 账号凭据读写
 ├── config.ts         # 协议常量与路径配置
 ├── bridge.ts         # 主循环：getUpdates → 媒体 → pi → sendMessage，typing 状态
 ├── ilink/
 │   ├── types.ts      # iLink 协议类型与枚举
 │   ├── client.ts     # HTTP 客户端（请求头、长轮询、收发、getconfig/sendtyping/getuploadurl）
 │   ├── login.ts      # 扫码登录流程（含重定向、配对码、过期刷新）
+│   ├── message.ts    # 消息正文提取（文本 / 语音转文字）
 │   └── media.ts      # 媒体：AES 加解密、CDN 上传下载、入站解析、出站图片上传
 └── pi/
     └── sessions.ts   # pi 会话管理（按微信会话隔离 + 串行化 + 发图工具）
+test/                 # 单元测试（vitest：AES 加解密、消息提取、iLink 请求构造）
 ```
 
 ## iLink 协议要点
@@ -175,6 +183,26 @@ pi 是具备工具执行能力的编码 Agent（默认含 bash 等工具）。�
 - 仅在私聊中使用，不要将 ClawBot 拉入不可信的群聊
 - 通过 `PI_WEIXIN_WORKSPACE` 限定 pi 的工作目录，降低误操作影响面
 - 如需更严格的权限控制，可在 `src/pi/sessions.ts` 中通过 `createAgentSession` 的 `tools` 选项限制可用工具
+
+## 开发
+
+```bash
+npm run typecheck   # 类型检查
+npm test            # 单元测试（vitest）
+npm run build       # 构建到 dist/
+```
+
+CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 20 / 22）。
+
+## 故障排查
+
+| 现象 | 原因 / 解决 |
+|---|---|
+| 启动弹 node.exe 控制台框 | 用 PM2 fork 模式 + bin 包装器（已默认）；勿用 tsx CLI 直接拉起（会额外派生无 `windowsHide` 的子进程） |
+| 发图片但 pi 说“看不到图” | pi 全局 `images.blockImages` 为 true 会在送入模型前剥离图片；改为 false（`~/.pi/agent/settings.json`） |
+| 提示会话过期 / 要求重扫 | errcode -14，运行 `pi-weixin-bridge login` 重新扫码 |
+| 消息被重复处理 / 冲突 | 同一微信账号勿多实例同时轮询 getUpdates；确保只有一个服务在跑 |
+| gh / npx 网络超时 | github.com 连通性波动，配置代理（`HTTPS_PROXY`）后重试 |
 
 ## 许可
 
