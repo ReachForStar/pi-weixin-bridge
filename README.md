@@ -36,7 +36,7 @@
 ```bash
 npx -y pi-weixin-bridge install
 # 未发布到 npm 时可用 git 源：
-npx -y github:MindFlowLab/pi-weixin-bridge install
+npx -y github:ReachForStar/pi-weixin-bridge install
 ```
 
 `install` 会依次：① 显示二维码供微信扫码绑定（已有账号则跳过）→ ② 配置 PM2 常驻服务并保存 → ③ 生成隐藏窗口启动/停止快捷方式。
@@ -56,7 +56,7 @@ pi-weixin-bridge help        # 帮助
 ### 手动安装（clone 源码）
 
 ```bash
-git clone https://github.com/MindFlowLab/pi-weixin-bridge.git
+git clone https://github.com/ReachForStar/pi-weixin-bridge.git
 cd pi-weixin-bridge
 npm install
 
@@ -72,10 +72,10 @@ npm start
 
 ```bash
 # 从 git 仓库直接运行（首次同样需扫码登录）
-npx github:MindFlowLab/pi-weixin-bridge
+npx github:ReachForStar/pi-weixin-bridge
 
 # 或全局安装后用命令运行
-npm install -g github:MindFlowLab/pi-weixin-bridge
+npm install -g github:ReachForStar/pi-weixin-bridge
 pi-weixin-bridge
 ```
 
