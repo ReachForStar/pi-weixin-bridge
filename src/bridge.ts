@@ -9,25 +9,12 @@ import {
   type WeixinMessage,
 } from "./ilink/types.js";
 import { downloadInboundMedia, uploadImage, type UploadedInfo } from "./ilink/media.js";
+import { extractText } from "./ilink/message.js";
 import { PiSessionManager, type ReplyContext } from "./pi/sessions.js";
 import { CONFIG } from "./config.js";
 
 function generateClientId(): string {
   return `pi-weixin-bridge:${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
-}
-
-/** 从 item_list 提取正文文本（含语音转文字） */
-function extractText(items?: MessageItem[]): string {
-  if (!items?.length) return "";
-  for (const item of items) {
-    if (item.type === MessageItemType.TEXT && item.text_item?.text != null) {
-      return String(item.text_item.text);
-    }
-    if (item.type === MessageItemType.VOICE && item.voice_item?.text) {
-      return item.voice_item.text;
-    }
-  }
-  return "";
 }
 
 export class Bridge {
