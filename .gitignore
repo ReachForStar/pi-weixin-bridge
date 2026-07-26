@@ -3,4 +3,5 @@ dist/
 logs/
 *.log
 state/
+*.lnk
 .DS_Store

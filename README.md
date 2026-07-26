@@ -62,16 +62,28 @@ npm run pm2:stop        # 停止
 
 会话过期（errcode -14）需重新扫码时：`npm run pm2:stop` → `npm start` 扫码 → `npm run pm2:start`。
 
-### 隐藏窗口启动（不弹终端框）
+### 隐藏窗口启动（不弹终端框，PowerShell）
 
-PM2 守护进程与应用进程均带 `windowsHide`，本身不弹窗；启动时弹出的终端框来自运行启动命令的窗口。用 VBS 隐藏启动可全程无可见窗口：
+PM2 守护进程与应用进程均带 `windowsHide`，本身不弹窗；启动时弹出的终端框来自运行启动命令的窗口。用 PowerShell 隐藏启动可全程无可见窗口：
 
-- 双击 `start-service.vbs` → 后台启动（无终端框）
-- 双击 `stop-service.vbs` → 停止
+```powershell
+# 1. 生成“双击无窗口”快捷方式（只需运行一次）
+powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
 
-> VBS 必须为纯 ASCII（不能含中文注释），否则 VBScript 按 GBK 解析 UTF-8 会报 800A01A8。
+# 2. 之后双击生成的快捷方式即可（无终端框）：
+#    start-pi-weixin-bridge.lnk  → 后台启动
+#    stop-pi-weixin-bridge.lnk   → 停止
+```
 
-开机自启：把 `start-service.vbs` 的快捷方式放入启动目录（`shell:startup`）或用任务计划程序。Windows 服务方式可用 `pm2-windows-startup`（`npm i -g pm2-windows-startup && pm2-startup install`）。
+也可直接命令行隐藏启动：
+
+```powershell
+powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-service.ps1
+```
+
+脚本说明：`start-service.ps1` / `stop-service.ps1` 以 `Start-Process -WindowStyle Hidden` 拉起 PM2；`create-shortcuts.ps1` 生成以 `powershell -WindowStyle Hidden` 运行上述脚本的快捷方式（`.lnk` 为本机生成，已 gitignore）。
+
+开机自启：把 `start-pi-weixin-bridge.lnk` 放入启动目录（`shell:startup`）或用任务计划程序；Windows 服务方式可用 `pm2-windows-startup`（`npm i -g pm2-windows-startup && pm2-startup install`）。
 
 ## 配置
 
