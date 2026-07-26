@@ -56,6 +56,7 @@ pi-weixin-bridge login       # 扫码登录 / 重新绑定微信
 pi-weixin-bridge start       # 前台运行桥接服务（默认）
 pi-weixin-bridge stop        # 停止 PM2 服务
 pi-weixin-bridge status      # 查看 PM2 服务状态
+pi-weixin-bridge update      # 更新到最新版（git 安装：git pull + npm install + 重启）
 pi-weixin-bridge uninstall   # 卸载（删 PM2 服务与快捷方式，保留账号）
 pi-weixin-bridge help        # 帮助
 ```
@@ -148,7 +149,7 @@ powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-se
 ```
 src/
 ├── index.ts          # 入口：登录、状态持久化、会话超时/鉴权失效重登、优雅退出
-├── cli.ts            # CLI 命令（install/login/start/stop/status/uninstall/help）
+├── cli.ts            # CLI 命令（install/login/start/stop/status/update/uninstall/help）
 ├── account.ts        # 账号凭据读写
 ├── config.ts         # 协议常量与路径配置
 ├── bridge.ts         # 主循环：getUpdates → 媒体 → pi → sendMessage，typing 状态

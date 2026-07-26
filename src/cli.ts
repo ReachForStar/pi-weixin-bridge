@@ -23,6 +23,7 @@ function printHelp(): void {
   start       前台运行桥接服务（默认命令）
   stop        停止 PM2 常驻服务
   status      查看 PM2 服务状态
+  update      更新到最新版（git 安装：git pull + npm install + 重启）
   uninstall   卸载：删除 PM2 服务与快捷方式（保留账号凭据）
   help        显示本帮助
 
@@ -114,6 +115,34 @@ function uninstall(): void {
   console.log("✅ 已删除 PM2 服务与快捷方式（账号凭据保留在 ~/.pi-weixin-bridge/account.json）");
 }
 
+/** 更新到最新版：git 安装走 git pull + npm install + 重启；npx 安装提示重跑安装命令 */
+function update(): void {
+  console.log("=== 更新 pi-weixin-bridge ===\n");
+
+  // 非 git 仓库安装（npx）：每次运行自动获取最新版，重跑安装命令即可
+  if (!existsSync(join(PKG_ROOT, ".git"))) {
+    console.log("当前为 npx 临时安装，每次运行自动获取最新版。重新运行安装命令即可：");
+    console.log("  npx -y github:ReachForStar/pi-weixin-bridge install");
+    return;
+  }
+
+  console.log("第 1 步：拉取最新代码");
+  const pull = spawnSync("git", ["pull"], { cwd: PKG_ROOT, stdio: "inherit", shell: true });
+  if (pull.status !== 0) {
+    console.error("git pull 失败，更新中止。");
+    process.exit(1);
+  }
+
+  console.log("\n第 2 步：更新依赖");
+  const install = spawnSync("npm", ["install"], { cwd: PKG_ROOT, stdio: "inherit", shell: true });
+  if (install.status !== 0) console.error("npm install 失败，请手动检查。");
+
+  console.log("\n第 3 步：重启服务");
+  runPm2(["restart", APP_NAME]);
+
+  console.log("\n✅ 更新完成。");
+}
+
 export async function runCli(args: string[]): Promise<void> {
   const command = args[0] ?? "help";
   switch (command) {
@@ -131,6 +160,9 @@ export async function runCli(args: string[]): Promise<void> {
       break;
     case "uninstall":
       uninstall();
+      break;
+    case "update":
+      update();
       break;
     case "help":
     case "--help":
