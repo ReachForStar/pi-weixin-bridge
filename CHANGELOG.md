@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-07-26
+
+### Added
+- 斜杠命令（`src/command.ts`）：`/help`（帮助）、`/status`（状态）、`/new`（新对话，清空会话上下文）；未知斜杠命令交由 pi 处理。
+- `PiSessionManager.resetSession`（供 /new 重置会话）。
+- 斜杠命令单元测试。
+
 ## [1.2.0] - 2026-07-26
 
 ### Added
