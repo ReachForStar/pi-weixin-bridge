@@ -2,6 +2,16 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] - 2026-07-26
+
+### Changed
+- 发布流程自动化：push 到 main 测试通过后，自动发布 npm 并从 CHANGELOG 提取 notes 创建 GitHub Release。
+- npm 包描述改为中英双语，扩充 keywords，提升可发现性。
+
+### Added
+- 仓库增加 GitHub topics（wechat / ai-agent / chatbot 等 12 个）。
+- 新增 `scripts/extract-changelog.mjs`（CI 提取版本 release notes）。
+
 ## [1.0.0] - 2026-07-26
 
 > 已发布到 npm：[`pi-weixin-bridge`](https://www.npmjs.com/package/pi-weixin-bridge)，可 `npx -y pi-weixin-bridge install` 一键安装。
