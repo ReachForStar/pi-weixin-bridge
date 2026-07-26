@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   try {
     while (!controller.signal.aborted) {
       try {
-        const bridge = new Bridge(client, pi, contextStore);
+        const bridge = new Bridge(client, pi, contextStore, state.accountId);
         await bridge.run(controller.signal);
         break; // 正常退出（被 abort）
       } catch (err) {

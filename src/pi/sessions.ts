@@ -135,4 +135,21 @@ export class PiSessionManager {
     }
     this.sessions.clear();
   }
+
+  /** 重置指定会话（dispose 并移除，下次 chat 时新建）——用于 /new 命令 */
+  async resetSession(key: string): Promise<void> {
+    // 等待该会话的串行锁完成，避免重置与正在进行的对话冲突
+    const prev = this.locks.get(key);
+    if (prev) await prev.catch(() => {});
+    const session = this.sessions.get(key);
+    if (session) {
+      try {
+        session.dispose();
+      } catch {
+        // 忽略释放异常
+      }
+      this.sessions.delete(key);
+    }
+    this.replyContexts.delete(key);
+  }
 }

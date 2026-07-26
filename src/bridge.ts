@@ -6,6 +6,7 @@ import { ContextStore } from "./ilink/context-store.js";
 import { parseIncomingMessage } from "./message/parser.js";
 import { buildImageMessage, buildTextMessage } from "./message/builder.js";
 import { chunkText } from "./message/markdown.js";
+import { SlashCommandHandler } from "./command.js";
 import { PiSessionManager, type ReplyContext } from "./pi/sessions.js";
 import { CONFIG } from "./config.js";
 import { logger } from "./logger/index.js";
@@ -16,12 +17,16 @@ const TICKET_TTL_MS = 50 * 60 * 1000;
 export class Bridge {
   private getUpdatesBuf = "";
   private consecutiveFailures = 0;
+  private slash: SlashCommandHandler;
 
   constructor(
     private client: IlinkClient,
     private pi: PiSessionManager,
     private contextStore: ContextStore,
-  ) {}
+    accountId: string,
+  ) {
+    this.slash = new SlashCommandHandler(pi, contextStore, accountId);
+  }
 
   async run(signal: AbortSignal): Promise<void> {
     let nextTimeout = CONFIG.longPollTimeoutMs;
@@ -97,6 +102,16 @@ export class Bridge {
 
     // 持久化 context_token（用于回复与主动推送，重启可恢复）
     if (contextToken) this.contextStore.setContextToken(from, contextToken);
+
+    // 斜杠命令优先处理（不经过 pi）
+    const slashReply = await this.slash.handle(incoming.text, { key });
+    if (slashReply !== null) {
+      logger.info(`[cmd] ${from}: ${incoming.text}`);
+      for (const chunk of chunkText(slashReply)) {
+        await this.client.sendMessage(buildTextMessage(chunk, { to: from, contextToken }));
+      }
+      return;
+    }
 
     // 入站媒体：图片转 base64 供 pi 视觉；文件/视频落盘并以说明注入
     const media = await downloadInboundMedia(msg.item_list);
