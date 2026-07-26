@@ -1,0 +1,16 @@
+# Changelog
+
+本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [1.0.0] - 2026-07-26
+
+### Added
+- 微信 ClawBot ↔ pi 桥接服务核心：iLink 协议直连（扫码登录、长轮询收消息、发消息）。
+- 入站媒体处理：图片解密转 base64 供 pi 视觉理解，语音用服务端转文字，文件/视频解密落盘。
+- 出站图片：pi 经 `send_weixin_image` 工具上传发送本地图片（CDN + AES-128-ECB）。
+- 「正在输入」状态提示（getconfig + sendtyping）。
+- pi 多会话管理：按微信会话隔离 + 串行化。
+- CLI：`install` / `login` / `start` / `stop` / `status` / `uninstall` / `help`，支持 `npx` 一键安装。
+- PM2 常驻部署（fork 模式，经 bin 包装器进程内运行 tsx，避免 Windows 启动弹控制台框）。
+- 隐藏窗口启动/停止快捷方式生成（PowerShell）。
+- 单元测试（AES 加解密、消息提取、iLink 请求构造）与 GitHub Actions CI。
