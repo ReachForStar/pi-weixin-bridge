@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.1] - 2026-09-16
+
+### Fixed
+
+- package.json 中重复的 `engines` 字段（头部新加 `>=22`、尾部遗留 `>=18`，JSON 后值覆盖前值）导致 npm 发布包声明为旧值；已去重，正确声明 `node >=22`。
+
 ## [1.5.0] - 2026-09-16
 
 ### Added
