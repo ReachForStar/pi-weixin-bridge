@@ -6,10 +6,18 @@ import { CONFIG } from "./config.js";
 import { IlinkClient } from "./ilink/client.js";
 import { loginWithQR } from "./ilink/login.js";
 import { loadState, saveState } from "./account.js";
+import {
+  BRIDGE_LOG_FILE,
+  daemonStatus,
+  startDaemon,
+  stopDaemon,
+  tailLog,
+} from "./daemon/daemon.js";
+import { installBootTask, uninstallBootTask } from "./daemon/boot.js";
+import { runSupervisor } from "./daemon/supervisor.js";
 
-// 包根目录（bin 的上级），用于定位 ecosystem.config.cjs 与快捷方式
+// 包根目录（src 的上级），用于定位 ps1 脚本与计划任务
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const APP_NAME = "pi-weixin-bridge";
 const SHORTCUTS = ["start-pi-weixin-bridge.lnk", "stop-pi-weixin-bridge.lnk"];
 
 function printHelp(): void {
@@ -18,14 +26,15 @@ function printHelp(): void {
 用法: pi-weixin-bridge <命令>
 
 命令:
-  install     一键安装：扫码绑定微信 + 配置 PM2 常驻服务 + 创建快捷方式
-  login       扫码登录 / 重新绑定微信
-  start       前台运行桥接服务（默认命令）
-  stop        停止 PM2 常驻服务
-  status      查看 PM2 服务状态
-  update      更新到最新版（git 安装：git pull + npm install + 重启）
-  uninstall   卸载：删除 PM2 服务与快捷方式（保留账号凭据）
-  help        显示本帮助
+  install         一键安装：扫码绑定微信 + 启动后台 daemon + 创建快捷方式
+  login           扫码登录 / 重新绑定微信
+  start           前台运行桥接服务（默认命令）
+  stop            停止后台 daemon
+  status          查看后台 daemon 状态
+  daemon          后台 daemon 管理（见 daemon help）
+  update          更新到最新版（git 安装：git pull + npm install + 重启）
+  uninstall       卸载：停止服务、移除自启与快捷方式（保留账号凭据）
+  help            显示本帮助
 
 示例:
   npx -y pi-weixin-bridge install
@@ -34,14 +43,24 @@ function printHelp(): void {
 `);
 }
 
-/** 在包根目录运行 npx pm2 <args>（继承 stdio 直接展示输出） */
-function runPm2(args: string[]): number {
-  const result = spawnSync("npx", ["pm2", ...args], {
-    cwd: PKG_ROOT,
-    stdio: "inherit",
-    shell: true,
-  });
-  return result.status ?? 1;
+function printDaemonHelp(): void {
+  console.log(`pi-weixin-bridge daemon <子命令>
+
+子命令:
+  start            启动后台 daemon（崩溃自动重启；已运行则跳过）
+  stop             停止 daemon（杀进程树并清理 PID 文件）
+  status           查看运行状态与日志路径
+  restart          重启 daemon
+  logs [n]         查看桥接日志末尾 n 行（默认 50）
+  install-boot     注册开机自启（每用户登录计划任务，免管理员）
+  uninstall-boot   移除开机自启
+  supervise        内部命令：supervisor 进程本体（由 daemon start 拉起，勿手动运行）
+
+说明:
+  - PID 与日志位于 ~/.pi-weixin-bridge/daemon/（或 PI_WEIXIN_STATE_DIR 下）
+  - 后台模式下会话过期无法扫码：日志会提示在终端运行
+    pi-weixin-bridge login 重新扫码，扫码完成后服务自动恢复
+`);
 }
 
 /** 扫码登录并保存账号，返回是否成功 */
@@ -72,6 +91,73 @@ function createShortcuts(): void {
   });
 }
 
+async function runDaemon(args: string[]): Promise<void> {
+  const sub = args[0] ?? "help";
+  switch (sub) {
+    case "start": {
+      const r = startDaemon();
+      console.log(r.message);
+      if (!r.ok) process.exit(1);
+      break;
+    }
+    case "stop": {
+      const r = stopDaemon();
+      console.log(r.stopped ? "已停止" : "服务未在运行");
+      break;
+    }
+    case "status": {
+      const st = daemonStatus();
+      if (st.running) {
+        console.log(
+          `运行中：supervisor pid ${st.supervisorPid}${st.bridgePid ? `，桥接 pid ${st.bridgePid}` : "（桥接进程未就绪）"}`,
+        );
+      } else {
+        console.log("未运行");
+      }
+      console.log(`桥接日志: ${BRIDGE_LOG_FILE}`);
+      break;
+    }
+    case "restart": {
+      stopDaemon();
+      const r = startDaemon();
+      console.log(r.message);
+      if (!r.ok) process.exit(1);
+      break;
+    }
+    case "logs": {
+      const n = Math.max(1, Number.parseInt(args[1] ?? "50", 10) || 50);
+      const tail = tailLog(BRIDGE_LOG_FILE, n);
+      console.log(tail || "（暂无日志）");
+      break;
+    }
+    case "install-boot": {
+      const r = installBootTask();
+      console.log(r.message);
+      if (!r.ok) process.exit(1);
+      break;
+    }
+    case "uninstall-boot": {
+      const r = uninstallBootTask();
+      console.log(r.message);
+      break;
+    }
+    case "supervise": {
+      // supervisor 进程本体：由 daemon start 以 detached 方式拉起
+      await runSupervisor();
+      break;
+    }
+    case "help":
+    case "--help":
+    case "-h":
+      printDaemonHelp();
+      break;
+    default:
+      console.error(`未知 daemon 子命令: ${sub}\n`);
+      printDaemonHelp();
+      process.exit(1);
+  }
+}
+
 async function install(): Promise<void> {
   console.log("=== pi-weixin-bridge 安装 ===\n");
 
@@ -89,10 +175,14 @@ async function install(): Promise<void> {
     console.log("");
   }
 
-  // 第 2 步：PM2 常驻服务
-  console.log("第 2 步：配置 PM2 常驻服务");
-  runPm2(["start", "ecosystem.config.cjs"]);
-  runPm2(["save"]);
+  // 第 2 步：后台 daemon（内置，零第三方依赖：崩溃自动重启 + 日志）
+  console.log("第 2 步：启动后台 daemon");
+  const r = startDaemon();
+  console.log(r.message);
+  if (!r.ok) {
+    console.error("daemon 启动失败，安装中止。");
+    process.exit(1);
+  }
   console.log("");
 
   // 第 3 步：快捷方式
@@ -103,16 +193,20 @@ async function install(): Promise<void> {
   console.log("✅ 安装完成。");
   console.log("   - 服务已后台运行（pi-weixin-bridge status 查看）");
   console.log("   - 快捷方式：start-pi-weixin-bridge.lnk / stop-pi-weixin-bridge.lnk");
+  console.log("   - 开机自启（可选）：pi-weixin-bridge daemon install-boot");
 }
 
 function uninstall(): void {
   console.log("=== 卸载 pi-weixin-bridge ===");
-  runPm2(["delete", APP_NAME]);
+  const r = stopDaemon();
+  console.log(r.stopped ? "已停止后台 daemon" : "daemon 未在运行");
+  const boot = uninstallBootTask();
+  console.log(boot.message);
   for (const name of SHORTCUTS) {
     const p = join(PKG_ROOT, name);
     if (existsSync(p)) rmSync(p);
   }
-  console.log("✅ 已删除 PM2 服务与快捷方式（账号凭据保留在 ~/.pi-weixin-bridge/account.json）");
+  console.log(`✅ 已停止服务、移除自启与快捷方式（账号凭据保留在 ~/.pi-weixin-bridge/account.json）`);
 }
 
 /** 更新到最新版：git 安装走 git pull + npm install + 重启；npx 安装提示重跑安装命令 */
@@ -138,7 +232,9 @@ function update(): void {
   if (install.status !== 0) console.error("npm install 失败，请手动检查。");
 
   console.log("\n第 3 步：重启服务");
-  runPm2(["restart", APP_NAME]);
+  stopDaemon();
+  const r = startDaemon();
+  console.log(r.message);
 
   console.log("\n✅ 更新完成。");
 }
@@ -152,11 +248,18 @@ export async function runCli(args: string[]): Promise<void> {
     case "login":
       await login();
       break;
+    case "start":
+      // bin 包装器已处理 start；这里兜底（直接调 runCli 的场景）
+      await import("./index.js");
+      break;
     case "stop":
-      runPm2(["stop", APP_NAME]);
+      stopDaemon();
       break;
     case "status":
-      runPm2(["list"]);
+      await runDaemon(["status"]);
+      break;
+    case "daemon":
+      await runDaemon(args.slice(1));
       break;
     case "uninstall":
       uninstall();

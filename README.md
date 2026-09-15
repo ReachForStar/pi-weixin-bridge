@@ -46,18 +46,19 @@ npx -y pi-weixin-bridge install
 npx -y github:ReachForStar/pi-weixin-bridge install
 ```
 
-`install` 会依次：① 显示二维码供微信扫码绑定（已有账号则跳过）→ ② 配置 PM2 常驻服务并保存 → ③ 生成隐藏窗口启动/停止快捷方式。
+`install` 会依次：① 显示二维码供微信扫码绑定（已有账号则跳过）→ ② 启动内置后台 daemon（崩溃自动重启，零第三方依赖）→ ③ 生成隐藏窗口启动/停止快捷方式。
 
 ### CLI 命令
 
 ```bash
-pi-weixin-bridge install     # 一键安装（扫码绑定 + PM2 + 快捷方式）
+pi-weixin-bridge install     # 一键安装（扫码绑定 + 后台 daemon + 快捷方式）
 pi-weixin-bridge login       # 扫码登录 / 重新绑定微信
 pi-weixin-bridge start       # 前台运行桥接服务（默认）
-pi-weixin-bridge stop        # 停止 PM2 服务
-pi-weixin-bridge status      # 查看 PM2 服务状态
+pi-weixin-bridge stop        # 停止后台 daemon
+pi-weixin-bridge status      # 查看后台 daemon 状态
+pi-weixin-bridge daemon      # daemon 管理：start/stop/status/restart/logs/install-boot/uninstall-boot
 pi-weixin-bridge update      # 更新到最新版（git 安装：git pull + npm install + 重启）
-pi-weixin-bridge uninstall   # 卸载（删 PM2 服务与快捷方式，保留账号）
+pi-weixin-bridge uninstall   # 卸载（停服务、删自启与快捷方式，保留账号）
 pi-weixin-bridge help        # 帮助
 ```
 
@@ -90,39 +91,52 @@ pi-weixin-bridge
 npx -y github:ReachForStar/pi-weixin-bridge
 ```
 
-> npx 方式适合临时运行/测试；长期后台服务仍推荐下面的 PM2 方式（自动重启、日志、开机自启）。
+> npx 方式适合临时运行/测试；长期后台服务仍推荐下面的 daemon 方式（自动重启、日志、开机自启）。
 
-### PM2 常驻部署
+### 后台 daemon 常驻部署（内置，默认推荐）
 
-> 重要：守护进程无法扫码，须**先交互式登录一次**（`npm start` 扫码，账号落盘），再用 PM2 拉起。
+> 重要：后台进程无法扫码，须**先交互式登录一次**（`npm start` 扫码，账号落盘），再启动 daemon。
 
 ```bash
 # 1. 首次交互式登录（扫码后 Ctrl+C 退出即可，账号已保存）
 npm start
 
-# 2. PM2 拉起（fork 模式，免构建直接跑 TS）
-npm run pm2:start
-npm run pm2:save        # 保存进程列表，pm2 守护进程重启后自动恢复
-
-# 常用运维
-npm run pm2:logs        # 查看日志
-npm run pm2:restart     # 重启
-npm run pm2:stop        # 停止
+# 2. 启动后台 daemon（supervisor 常驻：崩溃自动重启、指数退避、日志轮转）
+pi-weixin-bridge daemon start
+pi-weixin-bridge daemon status    # 查看状态
+pi-weixin-bridge daemon logs      # 查看日志（末尾 50 行）
+pi-weixin-bridge daemon restart   # 重启
+pi-weixin-bridge daemon stop      # 停止
 ```
 
-会话过期（errcode -14）需重新扫码时：`npm run pm2:stop` → `npm start` 扫码 → `npm run pm2:start`。
+与 PM2 的差异：内置 daemon 零第三方依赖，PID/日志落在 `~/.pi-weixin-bridge/daemon/`（npx 临时目录被清理也不受影响），跨平台（Windows/POSIX）。
+
+**会话过期（errcode -14）重新扫码**：后台模式无法交互扫码，日志会提示：
+
+```
+[main] 后台模式无法扫码。请在终端运行 `pi-weixin-bridge login` 重新扫码，扫码完成后服务自动恢复
+```
+
+在任意终端跑 `pi-weixin-bridge login` 扫码即可，daemon 检测到账号更新后自动恢复，无需重启服务。
+
+**开机自启（可选）**：
+
+```bash
+pi-weixin-bridge daemon install-boot     # 注册每用户登录计划任务（免管理员、隐藏窗口）
+pi-weixin-bridge daemon uninstall-boot   # 移除
+```
 
 ### 隐藏窗口启动（不弹终端框，PowerShell）
 
-PM2 守护进程与应用进程均带 `windowsHide`，本身不弹窗；启动时弹出的终端框来自运行启动命令的窗口。用 PowerShell 隐藏启动可全程无可见窗口：
+daemon 进程本身带 `windowsHide`，无控制台窗口；启动时弹出的终端框来自运行启动命令的窗口。用 PowerShell 隐藏启动可全程无可见窗口：
 
 ```powershell
 # 1. 生成“双击无窗口”快捷方式（只需运行一次）
 powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
 
 # 2. 之后双击生成的快捷方式即可（无终端框）：
-#    start-pi-weixin-bridge.lnk  → 后台启动
-#    stop-pi-weixin-bridge.lnk   → 停止
+#    start-pi-weixin-bridge.lnk  → 后台启动（daemon start）
+#    stop-pi-weixin-bridge.lnk   → 停止（daemon stop）
 ```
 
 也可直接命令行隐藏启动：
@@ -131,9 +145,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
 powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-service.ps1
 ```
 
-脚本说明：`start-service.ps1` / `stop-service.ps1` 以 `Start-Process -WindowStyle Hidden` 拉起 PM2；`create-shortcuts.ps1` 生成以 `powershell -WindowStyle Hidden` 运行上述脚本的快捷方式（`.lnk` 为本机生成，已 gitignore）。
+脚本说明：`start-service.ps1` / `stop-service.ps1` 以 `Start-Process -WindowStyle Hidden` 调用 `daemon start/stop`；`create-shortcuts.ps1` 生成以 `powershell -WindowStyle Hidden` 运行上述脚本的快捷方式（`.lnk` 为本机生成，已 gitignore）。
 
-开机自启：把 `start-pi-weixin-bridge.lnk` 放入启动目录（`shell:startup`）或用任务计划程序；Windows 服务方式可用 `pm2-windows-startup`（`npm i -g pm2-windows-startup && pm2-startup install`）。
+### PM2（可选替代）
+
+如你已习惯 PM2 生态，仍可用（`npm run pm2:start / pm2:stop / pm2:logs`），但 Windows 上需额外保活 pm2 守护进程；本项目的默认路径与 `install` 命令均已切换到内置 daemon。
 
 ## 配置
 
@@ -153,6 +169,10 @@ src/
 ├── account.ts        # 账号凭据读写
 ├── config.ts         # 协议常量与路径配置
 ├── bridge.ts         # 主循环：getUpdates → 媒体 → pi → sendMessage，typing 状态
+├── daemon/           # 内置后台 daemon（零第三方依赖，替代 PM2）
+│   ├── daemon.ts     # 控制端：拉起/停止 supervisor 进程树、PID 与日志、退避策略
+│   ├── supervisor.ts # supervisor 进程：子进程崩溃自动重启（指数退避）
+│   └── boot.ts       # 开机自启：注册/移除每用户登录计划任务（免管理员）
 ├── logger/           # 分级日志（info/warn/error/debug + 时间戳）
 ├── ilink/
 │   ├── types.ts      # iLink 协议类型与枚举
@@ -195,7 +215,7 @@ test/                 # 单元测试（vitest）
 - ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
 - ✅ context_token / typing ticket 持久化（重启恢复）
 - ✅ 斜杠命令：`/help`、`/status`、`/new`（新对话），未知命令交由 pi
-- ✅ PM2 常驻部署（fork 模式）
+- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启计划任务，零第三方依赖；PM2 作为可选路径保留）
 - ⬜ 出站语音（需 silk 编码，未做）
 
 ## ⚠️ 安全提示
@@ -220,7 +240,8 @@ CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 2
 
 | 现象 | 原因 / 解决 |
 |---|---|
-| 启动弹 node.exe 控制台框 | 用 PM2 fork 模式 + bin 包装器（已默认）；勿用 tsx CLI 直接拉起（会额外派生无 `windowsHide` 的子进程） |
+| 启动弹 node.exe 控制台框 | 用 daemon（内置）或 PM2 fork 模式 + bin 包装器（已默认）；勿用 tsx CLI 直接拉起（会额外派生无 `windowsHide` 的子进程） |
+| 后台会话过期，收不到消息 | 后台模式无法扫码，日志提示运行 `pi-weixin-bridge login` 重新扫码，扫码后服务自动恢复（旧版 PM2 方式会挂死在等待 stdin，1.4.0 已修复） |
 | 发图片但 pi 说“看不到图” | pi 全局 `images.blockImages` 为 true 会在送入模型前剥离图片；改为 false（`~/.pi/agent/settings.json`） |
 | 提示会话过期 / 要求重扫 | errcode -14，运行 `pi-weixin-bridge login` 重新扫码 |
 | 消息被重复处理 / 冲突 | 同一微信账号勿多实例同时轮询 getUpdates；确保只有一个服务在跑 |

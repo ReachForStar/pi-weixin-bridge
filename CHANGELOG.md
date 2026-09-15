@@ -2,6 +2,19 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.0] - 2026-09-16
+
+### Added
+- 内置后台 daemon 管理器（`src/daemon/`，零第三方依赖，替代 PM2 硬依赖）：`daemon start/stop/status/restart/logs`。supervisor 进程崩溃自动重启（指数退避 3s→60s 封顶、存活超 60s 重置），PID/日志落在 `~/.pi-weixin-bridge/daemon/`（npx 临时目录被清理不受影响），日志超 5MB 自动轮转。
+- 开机自启：`daemon install-boot / uninstall-boot`（每用户登录计划任务，免管理员、隐藏窗口）。
+- 后台重登（headless）：后台模式下会话过期不再阻塞在 stdin 等待扫码，日志提示在终端运行 `login` 重新扫码，`account.json` 更新后服务自动恢复。
+- 新增 `start`/`status` 等命令兼容（原仅 pm2 路径）。
+
+### Changed
+- `install` / `stop` / `status` / `update` / `uninstall` 从 PM2 切换为内置 daemon；PM2 降级为可选路径（`npm run pm2:*` 仍可用）。
+- 快捷方式脚本（start/stop-service.ps1）改调 `daemon start/stop`。
+- npm 包分发新增 `scripts/` 与 `*.ps1`（开机自启脚本随包发布）。
+
 ## [1.3.1] - 2026-07-26
 
 ### Added

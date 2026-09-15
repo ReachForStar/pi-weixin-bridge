@@ -46,17 +46,19 @@ npx -y pi-weixin-bridge install
 npx -y github:ReachForStar/pi-weixin-bridge install
 ```
 
-`install` will: ① show a QR code for WeChat binding (skipped if an account already exists) → ② set up & save a PM2 resident service → ③ generate hidden-window start/stop shortcuts.
+`install` will: ① show a QR code for WeChat binding (skipped if an account already exists) → ② start the built-in background daemon (auto-restart on crash, zero third-party deps) → ③ generate hidden-window start/stop shortcuts.
 
 ### CLI commands
 
 ```bash
-pi-weixin-bridge install     # one-line install (QR bind + PM2 + shortcuts)
+pi-weixin-bridge install     # one-line install (QR bind + background daemon + shortcuts)
 pi-weixin-bridge login       # QR login / re-bind WeChat
 pi-weixin-bridge start       # run the bridge in the foreground (default)
-pi-weixin-bridge stop        # stop the PM2 service
-pi-weixin-bridge status      # show PM2 service status
-pi-weixin-bridge uninstall   # uninstall (remove PM2 service & shortcuts, keep account)
+pi-weixin-bridge stop        # stop the background daemon
+pi-weixin-bridge status      # show background daemon status
+pi-weixin-bridge daemon      # daemon management: start/stop/status/restart/logs/install-boot/uninstall-boot
+pi-weixin-bridge update      # update to latest (git install: git pull + npm install + restart)
+pi-weixin-bridge uninstall   # uninstall (stop service, remove boot task & shortcuts, keep account)
 pi-weixin-bridge help        # help
 ```
 
@@ -89,39 +91,52 @@ pi-weixin-bridge
 npx -y github:ReachForStar/pi-weixin-bridge
 ```
 
-> npx is great for temporary runs / testing; for a long-running background service, the PM2 approach below is recommended (auto-restart, logs, start-on-boot).
+> npx is great for temporary runs / testing; for a long-running background service, the built-in daemon below is recommended (auto-restart, logs, start-on-boot).
 
-### PM2 resident deployment
+### Background daemon deployment (built-in, recommended)
 
-> Important: a daemon cannot scan a QR code, so you must **log in interactively once first** (`npm start`, scan, credentials saved to disk), then start it with PM2.
+> Important: a background process cannot scan a QR code, so you must **log in interactively once first** (`npm start`, scan, credentials saved to disk), then start the daemon.
 
 ```bash
 # 1. First interactive login (scan, then Ctrl+C to exit — the account is saved)
 npm start
 
-# 2. Start with PM2 (fork mode, runs TS directly, no build)
-npm run pm2:start
-npm run pm2:save        # save the process list so it auto-recovers after a pm2 daemon restart
-
-# Common ops
-npm run pm2:logs        # view logs
-npm run pm2:restart     # restart
-npm run pm2:stop        # stop
+# 2. Start the background daemon (a supervisor keeps it alive: auto-restart on crash, exponential backoff, log rotation)
+pi-weixin-bridge daemon start
+pi-weixin-bridge daemon status    # show status
+pi-weixin-bridge daemon logs      # view logs (last 50 lines)
+pi-weixin-bridge daemon restart   # restart
+pi-weixin-bridge daemon stop      # stop
 ```
 
-When the session expires (errcode -14) and a re-scan is needed: `npm run pm2:stop` → `npm start` (scan) → `npm run pm2:start`.
+Differences from PM2: the built-in daemon has zero third-party dependencies, and PID/logs live in `~/.pi-weixin-bridge/daemon/` (unaffected by npx temp-dir cleanup), cross-platform (Windows/POSIX).
+
+**Session expiry (errcode -14) and re-scanning**: a background process cannot scan interactively, so the log will tell you to:
+
+```
+[main] Cannot scan QR in background mode. Run `pi-weixin-bridge login` in a terminal to re-scan; the service resumes automatically once scanning completes.
+```
+
+Just run `pi-weixin-bridge login` in any terminal and scan; the daemon detects the new account and resumes automatically — no service restart needed.
+
+**Start on boot (optional)**:
+
+```bash
+pi-weixin-bridge daemon install-boot     # register a per-user logon scheduled task (no admin, hidden window)
+pi-weixin-bridge daemon uninstall-boot   # remove it
+```
 
 ### Hidden-window startup (no console popup, PowerShell)
 
-Both the PM2 daemon and the app process carry `windowsHide`, so they don't pop up by themselves; the console window you see at startup comes from the window that runs the start command. Using PowerShell to start hidden gives a fully invisible window:
+The daemon process carries `windowsHide`, so it has no console window of its own; the console you see at startup comes from the window that runs the start command. Starting hidden via PowerShell keeps everything invisible:
 
 ```powershell
 # 1. Generate "double-click, no window" shortcuts (run once)
 powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
 
 # 2. Then just double-click the generated shortcuts (no console):
-#    start-pi-weixin-bridge.lnk  → start in background
-#    stop-pi-weixin-bridge.lnk   → stop
+#    start-pi-weixin-bridge.lnk  → start in background (daemon start)
+#    stop-pi-weixin-bridge.lnk   → stop (daemon stop)
 ```
 
 You can also start hidden from the command line directly:
@@ -130,9 +145,11 @@ You can also start hidden from the command line directly:
 powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-service.ps1
 ```
 
-Script notes: `start-service.ps1` / `stop-service.ps1` launch PM2 via `Start-Process -WindowStyle Hidden`; `create-shortcuts.ps1` generates shortcuts that run those scripts with `powershell -WindowStyle Hidden` (the `.lnk` files are generated locally and gitignored).
+Script notes: `start-service.ps1` / `stop-service.ps1` call `daemon start/stop` via `Start-Process -WindowStyle Hidden`; `create-shortcuts.ps1` generates shortcuts that run those scripts with `powershell -WindowStyle Hidden` (the `.lnk` files are generated locally and gitignored).
 
-Start on boot: put `start-pi-weixin-bridge.lnk` in the startup folder (`shell:startup`) or use Task Scheduler; for a Windows-service approach, use `pm2-windows-startup` (`npm i -g pm2-windows-startup && pm2-startup install`).
+### PM2 (optional alternative)
+
+If you already rely on the PM2 ecosystem, it still works (`npm run pm2:start / pm2:stop / pm2:logs`), but on Windows you must keep the pm2 daemon alive separately; this project's default path and the `install` command have switched to the built-in daemon.
 
 ## Configuration
 
@@ -152,6 +169,10 @@ src/
 ├── account.ts        # account credential read/write
 ├── config.ts         # protocol constants & path config
 ├── bridge.ts         # main loop: getUpdates → media → pi → sendMessage, typing status
+├── daemon/           # built-in background daemon (zero third-party deps, replaces PM2)
+│   ├── daemon.ts     # control side: start/stop the supervisor process tree, PID & logs, backoff policy
+│   ├── supervisor.ts # supervisor process: auto-restart the child on crash (exponential backoff)
+│   └── boot.ts       # start-on-boot: register/remove per-user logon scheduled task (no admin)
 ├── ilink/
 │   ├── types.ts      # iLink protocol types & enums
 │   ├── client.ts     # HTTP client (headers, long-poll, send/receive, getconfig/sendtyping/getuploadurl)
@@ -179,7 +200,7 @@ test/                 # unit tests (vitest: AES encrypt/decrypt, message extract
 - ✅ "Typing" indicator (getconfig + sendtyping)
 - ✅ Inbound media: image (decrypt → pi vision), voice (server-side speech-to-text), file/video (decrypt to disk → report path)
 - ✅ Outbound image: pi calls the `send_weixin_image` tool to upload & send a local image
-- ✅ PM2 resident deployment (fork mode)
+- ✅ Built-in background daemon (auto-restart on crash + log rotation + start-on-boot scheduled task, zero third-party deps; PM2 kept as an optional path)
 - ⬜ Outbound voice/file/video, slash commands, long-text chunked sending
 
 ## ⚠️ Security notice
@@ -204,7 +225,8 @@ CI: GitHub Actions automatically runs typecheck + test + build on push / PR (Nod
 
 | Symptom | Cause / Fix |
 |---|---|
-| node.exe console pops up at startup | Use PM2 fork mode + the bin wrapper (the default); don't launch directly via the tsx CLI (it spawns an extra child process without `windowsHide`) |
+| node.exe console pops up at startup | Use the built-in daemon or PM2 fork mode + the bin wrapper (the default); don't launch directly via the tsx CLI (it spawns an extra child process without `windowsHide`) |
+| Background session expired, no messages | Background mode can't scan; the log tells you to run `pi-weixin-bridge login` in a terminal and re-scan — the service resumes automatically after scanning (the old PM2 flow used to hang waiting on stdin; fixed in 1.4.0) |
 | You send an image but pi says it "can't see it" | pi's global `images.blockImages` being true strips images before they reach the model; set it to false (`~/.pi/agent/settings.json`) |
 | "Session expired" / asked to re-scan | errcode -14; run `pi-weixin-bridge login` to re-scan |
 | Messages processed twice / conflicts | Don't run multiple instances polling getUpdates for the same WeChat account; make sure only one service is running |

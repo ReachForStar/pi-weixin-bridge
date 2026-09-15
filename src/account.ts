@@ -17,3 +17,21 @@ export function saveState(state: AccountState): void {
   mkdirSync(STATE_DIR, { recursive: true });
   writeFileSync(ACCOUNT_FILE, JSON.stringify(state, null, 2), "utf8");
 }
+
+/**
+ * 等待账号被重新扫码保存（后台模式重登）：
+ * 轮询 account.json，直到出现与 prev 不同的 botToken（prev 为 null 时任意有效账号即可）；
+ * 等待期间被 abort（进程退出）则抛错，避免挂起。
+ */
+export async function waitForAccountChange(
+  prev: AccountState | null,
+  signal: AbortSignal,
+  pollMs = 10_000,
+): Promise<AccountState> {
+  for (;;) {
+    if (signal.aborted) throw new Error("等待重登期间进程已退出");
+    await new Promise((r) => setTimeout(r, pollMs));
+    const s = loadState();
+    if (s?.botToken && (!prev || s.botToken !== prev.botToken)) return s;
+  }
+}

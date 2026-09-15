@@ -4,7 +4,10 @@ logs/
 coverage/
 *.log
 state/
+tmp/
 *.lnk
 .env
 .DS_Store
 .npmrc
+.qmd/
+
