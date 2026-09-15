@@ -33,7 +33,7 @@
 ## 前置条件
 
 - 微信 App **8.0.70+**，且账号已开通 **ClawBot 插件**（设置 → 插件 → 微信ClawBot，官方灰度放量中）
-- Node.js **18+**
+- Node.js **22+**（pi-coding-agent SDK 及其内置 undici 要求 Node 22）
 - 已安装并配置好 **pi**（本服务复用 `~/.pi/agent` 下的模型与鉴权配置）
 
 ## 安装与运行
@@ -296,7 +296,7 @@ npm test            # 单元测试（vitest）
 npm run build       # 构建到 dist/
 ```
 
-CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 20 / 22）。
+CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）。
 
 ## 故障排查
 

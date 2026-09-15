@@ -33,7 +33,7 @@ The protocol is based on Tencent's official open-source repo [`Tencent/openclaw-
 ## Prerequisites
 
 - WeChat app **8.0.70+**, with the **ClawBot plugin** enabled on your account (Settings → Plugins → WeChat ClawBot; official gradual rollout)
-- Node.js **18+**
+- Node.js **22+** (the pi-coding-agent SDK and its bundled undici require Node 22)
 - **pi** installed and configured (this service reuses the model & auth config under `~/.pi/agent`)
 
 ## Install & Run
@@ -283,7 +283,7 @@ npm test            # unit tests (vitest)
 npm run build       # build to dist/
 ```
 
-CI: GitHub Actions automatically runs typecheck + test + build on push / PR (Node 20 / 22). On a push to `main`, if the tests pass and the version isn't published yet, it auto-publishes to npm.
+CI: GitHub Actions automatically runs typecheck + test + build on push / PR (Node 22). On a push to `main`, if the tests pass and the version isn't published yet, it auto-publishes to npm.
 
 ## Troubleshooting
 

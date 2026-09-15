@@ -7,12 +7,12 @@ on:
     branches: [main]
 
 jobs:
-  # 质量检查：类型检查 + 单元测试 + 构建（Node 20/22 双版本）
+  # 质量检查：类型检查 + 单元测试 + 构建（Node 22；pi-coding-agent SDK 及其内置 undici 要求 Node ≥22）
   check:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 

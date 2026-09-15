@@ -16,6 +16,7 @@
 - `runInstallWizard` 支持注入输入流与显式 interactive 覆盖；行读取器缓存快速管道输入（不丢答案），EOF 优雅回退默认。
 
 ### Changed
+- **Node 版本要求提升为 22+**：pi-coding-agent SDK 及其内置 undici 在 Node 20 下导入即崩（`webidl.markAsUncloneable is not a function`）；CI 矩阵改为仅 Node 22，package.json 增加 `engines.node >=22`。
 - `install` 流程调整为四步（选路径 → 扫码 → daemon → 快捷方式）；路径非默认时带 env 重执行自身，保证登录/daemon 子进程生效新路径。
 - `waitForAccountChange` 与 supervisor 退避等待均可被信号打断（SIGTERM 后无需睡满轮询/退避窗口）。
 - 退出信号导致的重登等待中断不再记为“致命错误”。
