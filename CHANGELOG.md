@@ -5,6 +5,10 @@
 ## [1.5.0] - 2026-09-16
 
 ### Added
+- **模型命令**：`/model` 查看当前模型、`/model <provider/modelId>` 切换（应用到所有进行中会话并保存为默认，重启后保持）、`/model list` 列出可用模型（只列 models.json 注册的 provider，避免内置目录上千个模型淹没）；默认模型 `amax/qwen-3.8-27B`，可用 `PI_WEIXIN_MODEL` 环境变量覆盖；未注册的模型引用回退 pi 默认模型（不阻塞服务启动）。
+- **斜杠命令完善**（共 9 个）：`/help`（markdown 样式）、`/status`（版本 / 模型 / 工作目录 / 运行时长 / 会话数）、`/new`、`/model`、`/usage`（当前对话消息 / Token / 成本 / 上下文占用）、`/stop`（中断进行中的任务）、`/ping`。
+- **skill / MCP 命令**：`/skill`（列出 agentDir + ~/.agents/skills 的 skill 与说明）、`/skill <名称>`（下一条消息按该 skill 处理，pi 先读 SKILL.md 执行）；`/mcp`（列出 mcp.json 的 server）、`/mcp <名称>`（下一条消息调用该 server 工具）。实现为一次性指令（per 会话，消费一次即清除）。
+- **回复 markdown 化**：所有命令输出改为 markdown 列表格式——微信 PC 端按 markdown 渲染文本，单 `\n` 被折成空格（之前 /status 显示成一行），列表项才是硬换行。
 - 安装向导：`install` 交互式选择保存路径（状态目录 / pi 工作目录，回车默认、`--yes` 非交互）；结果写入 `~/.pi-weixin-bridge/config.json`，后续所有进程（含 daemon 子进程）自动生效。
 - 配置三级解析：环境变量 > config.json > 平台默认；pi 工作目录默认按平台区分（Windows `D:\pi_weixin_project`，其他 `~/pi-weixin-project`）。
 - 凭据权限加固：POSIX 下状态目录自动收紧 700、账号文件 600（不受 umask 影响）；目录选择前实际探针校验可写。

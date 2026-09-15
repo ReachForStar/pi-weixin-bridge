@@ -25,7 +25,7 @@ export class Bridge {
     private contextStore: ContextStore,
     accountId: string,
   ) {
-    this.slash = new SlashCommandHandler(pi, contextStore, accountId);
+    this.slash = new SlashCommandHandler(pi, accountId);
   }
 
   async run(signal: AbortSignal): Promise<void> {

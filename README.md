@@ -251,10 +251,34 @@ test/                 # 单元测试（vitest）
 - ✅ 长文本分块发送（markdown 分块，避免超出微信单条长度）
 - ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
 - ✅ context_token / typing ticket 持久化（重启恢复）
-- ✅ 斜杠命令：`/help`、`/status`、`/new`（新对话），未知命令交由 pi
+- ✅ 斜杠命令（9 个：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
 - ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / Linux systemd 用户服务；PM2 作为可选路径保留）
 - ✅ 跨平台（Windows / Linux / macOS），安装向导交互式选择保存路径 + 凭据权限加固（POSIX 700/600）
 - ⬜ 出站语音（需 silk 编码，未做）
+
+### 模型
+
+- **默认模型** `amax/qwen-3.8-27B`（内置）；`/model <provider/modelId>` 可切换到 `~/.pi/agent/models.json` 中注册的任何模型，选择会保存为默认（重启后保持）；环境变量 `PI_WEIXIN_MODEL` 可覆盖默认值。
+
+### 斜杠命令
+
+| 命令 | 说明 |
+|---|---|
+| `/help` | 显示帮助 |
+| `/status` | 服务状态（版本 / 账号 / 模型 / 工作目录 / 运行时长 / 会话） |
+| `/new` | 开始新对话（清空当前会话上下文） |
+| `/model` | 查看当前模型 |
+| `/model list` | 可用模型列表（只列 models.json 注册的 provider） |
+| `/model <provider/modelId>` | 切换模型（应用到所有进行中会话并保存为默认） |
+| `/skill` | 可用 skill 列表（含说明） |
+| `/skill <名称>` | 下一条消息按该 skill 处理（pi 会先读其 SKILL.md 再执行） |
+| `/mcp` | 已配置 MCP server 列表（含启动命令） |
+| `/mcp <名称>` | 下一条消息调用该 server 的工具处理 |
+| `/usage` | 当前对话用量（消息 / 工具调用 / Token / 成本 / 上下文占用） |
+| `/stop` | 停止当前进行中的任务 |
+| `/ping` | 服务存活检查 |
+
+> 命令回复统一用 markdown 列表格式（微信端按 markdown 渲染；单换行会被折成空格，列表项才是硬换行）。
 
 ## ⚠️ 安全提示
 

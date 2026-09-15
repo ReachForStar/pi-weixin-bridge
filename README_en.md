@@ -236,10 +236,36 @@ test/                 # unit tests (vitest: AES encrypt/decrypt, message extract
 - ✅ pi multi-sessions isolated per WeChat chat + serialization
 - ✅ "Typing" indicator (getconfig + sendtyping)
 - ✅ Inbound media: image (decrypt → pi vision), voice (server-side speech-to-text), file/video (decrypt to disk → report path)
-- ✅ Outbound image: pi calls the `send_weixin_image` tool to upload & send a local image
+- ✅ Outbound media: image/file/video uploaded to CDN and sent (`send_weixin_image` tool + builder)
+- ✅ Long-text chunked sending (markdown chunking, avoids WeChat single-message length limit)
+- ✅ Slash commands (`/help` `/status` `/new` `/model` `/skill` `/mcp` `/usage` `/stop` `/ping`), unknown commands fall through to pi
 - ✅ Built-in background daemon (auto-restart on crash + log rotation + start-on-boot, zero third-party deps; Windows scheduled task / Linux systemd user service; PM2 kept as an optional path)
 - ✅ Cross-platform (Windows / Linux / macOS), install wizard with interactive path selection + credentials permission hardening (POSIX 700/600)
-- ⬜ Outbound voice/file/video, slash commands, long-text chunked sending
+- ⬜ Outbound voice (needs silk encoding, not done)
+
+### Model
+
+- **Default model** `amax/qwen-3.8-27B` (built-in); `/model <provider/modelId>` switches to any model registered in `~/.pi/agent/models.json`, the choice is saved as the default (survives restarts); the `PI_WEIXIN_MODEL` env var can override the default.
+
+### Slash commands
+
+| Command | Description |
+|---|---|
+| `/help` | show help |
+| `/status` | service status (version / account / model / workspace / uptime / sessions) |
+| `/new` | start a new conversation (clears context) |
+| `/model` | show current model |
+| `/model list` | available models (only providers registered in models.json) |
+| `/model <provider/modelId>` | switch model (applies to all in-flight sessions, saved as default) |
+| `/skill` | available skills (with descriptions) |
+| `/skill <name>` | next message is handled by that skill (pi reads its SKILL.md first) |
+| `/mcp` | configured MCP servers (with launch commands) |
+| `/mcp <name>` | next message uses tools of that MCP server |
+| `/usage` | current conversation usage (messages / tool calls / tokens / cost / context) |
+| `/stop` | stop the task in progress |
+| `/ping` | liveness check |
+
+> Command replies use markdown list formatting (WeChat renders markdown; a single newline is folded into a space, only list items are hard breaks).
 
 ## ⚠️ Security notice
 

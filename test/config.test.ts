@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -93,5 +93,28 @@ describe("config 路径解析", () => {
     const abs = join(home, "abs");
     expect(resolveUserPath(abs)).toBe(abs);
     expect(existsSync(join(home, "data"))).toBe(false); // 纯解析，不创建目录
+  });
+
+  it("MODEL_REF：默认 > config.json > 环境变量优先", async () => {
+    const { MODEL_REF } = await import("../src/config.js");
+    expect(MODEL_REF).toBe("amax/qwen-3.8-27B"); // 内置默认
+
+    const bootstrap = join(home, ".pi-weixin-bridge");
+    mkdirSync(bootstrap, { recursive: true });
+    writeFileSync(join(bootstrap, "config.json"), JSON.stringify({ model: "custom/m1" }), "utf8");
+    vi.resetModules();
+    expect((await import("../src/config.js")).MODEL_REF).toBe("custom/m1");
+
+    vi.stubEnv("PI_WEIXIN_MODEL", "env/m2");
+    vi.resetModules();
+    expect((await import("../src/config.js")).MODEL_REF).toBe("env/m2");
+  });
+
+  it("saveSettings：合并写入，保留其他字段", async () => {
+    const { saveSettings, CONFIG_FILE } = await import("../src/config.js");
+    saveSettings({ model: "a/b" });
+    saveSettings({ stateDir: join(home, "st"), workspace: join(home, "ws") });
+    const cfg = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+    expect(cfg).toEqual({ model: "a/b", stateDir: join(home, "st"), workspace: join(home, "ws") });
   });
 });

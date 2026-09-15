@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -25,6 +25,8 @@ export const CONFIG_FILE = join(BOOTSTRAP_DIR, "config.json");
 export interface BridgeSettings {
   stateDir?: string;
   workspace?: string;
+  /** 默认模型引用（provider/modelId），由 /model 命令设置 */
+  model?: string;
 }
 
 /** 读取安装向导写入的 config.json（不存在或损坏时回退默认，不抛错） */
@@ -38,6 +40,33 @@ export function loadSettings(): BridgeSettings {
 }
 
 const settings = loadSettings();
+
+/** 内置默认模型（用户 pi 配置中已注册的 amax 网关上的 Qwen3.8-27B） */
+export const DEFAULT_MODEL_REF = "amax/qwen-3.8-27B";
+/** 模型引用：环境变量 > config.json > 内置默认 */
+export const MODEL_REF =
+  process.env.PI_WEIXIN_MODEL || settings.model || DEFAULT_MODEL_REF;
+
+/** 合并写入 config.json（保留其他字段；值为 undefined 表示删除该字段） */
+export function saveSettings(patch: BridgeSettings): void {
+  const next: BridgeSettings = { ...loadSettings() };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) delete next[k as keyof BridgeSettings];
+    else next[k as keyof BridgeSettings] = v;
+  }
+  mkdirSync(BOOTSTRAP_DIR, { recursive: true });
+  writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2), "utf8");
+}
+
+/** 桥接版本（读包根 package.json；dist 与 src 下均指向仓库/包根） */
+export const BRIDGE_VERSION: string = (() => {
+  try {
+    const pkg = new URL("../package.json", import.meta.url);
+    return (JSON.parse(readFileSync(pkg, "utf8")) as { version?: string }).version ?? "dev";
+  } catch {
+    return "dev";
+  }
+})();
 
 /** 默认 pi 工作目录：Windows 保留既有 D:\pi_weixin_project，其他平台落到用户主目录 */
 export function defaultWorkspace(): string {
