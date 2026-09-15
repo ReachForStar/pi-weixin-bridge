@@ -12,6 +12,7 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_DIR } from "../config.js";
+import { hardenStateDir } from "../account.js";
 
 /** 包根目录（src/daemon 的上两级） */
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -85,6 +86,7 @@ export function startDaemon(): { ok: boolean; message: string } {
     return { ok: false, message: `未找到入口 ${BIN_PATH}` };
   }
   mkdirSync(DAEMON_DIR, { recursive: true });
+  hardenStateDir(); // 凭据所在目录，POSIX 下收紧为 700
   const fd = openSync(SUPERVISOR_LOG_FILE, "a");
   const child = spawn(process.execPath, [BIN_PATH, "daemon", "supervise"], {
     cwd: PKG_ROOT,

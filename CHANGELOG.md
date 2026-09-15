@@ -2,6 +2,23 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0] - 2026-09-16
+
+### Added
+- 安装向导：`install` 交互式选择保存路径（状态目录 / pi 工作目录，回车默认、`--yes` 非交互）；结果写入 `~/.pi-weixin-bridge/config.json`，后续所有进程（含 daemon 子进程）自动生效。
+- 配置三级解析：环境变量 > config.json > 平台默认；pi 工作目录默认按平台区分（Windows `D:\pi_weixin_project`，其他 `~/pi-weixin-project`）。
+- 凭据权限加固：POSIX 下状态目录自动收紧 700、账号文件 600（不受 umask 影响）；目录选择前实际探针校验可写。
+- 跨平台支持（Linux / macOS）：daemon 杀进程树按平台适配；Linux `daemon install-boot` 注册 systemd 用户服务（免 root，附 linger 提示）；快捷方式步骤仅 Windows。
+- `runInstallWizard` 支持注入输入流与显式 interactive 覆盖；行读取器缓存快速管道输入（不丢答案），EOF 优雅回退默认。
+
+### Changed
+- `install` 流程调整为四步（选路径 → 扫码 → daemon → 快捷方式）；路径非默认时带 env 重执行自身，保证登录/daemon 子进程生效新路径。
+- `waitForAccountChange` 与 supervisor 退避等待均可被信号打断（SIGTERM 后无需睡满轮询/退避窗口）。
+- 退出信号导致的重登等待中断不再记为“致命错误”。
+
+### Fixed
+- 未登录场景下状态目录权限不收紧（此前仅 saveState 执行后才收紧）。
+
 ## [1.4.0] - 2026-09-16
 
 ### Added

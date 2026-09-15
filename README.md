@@ -46,7 +46,13 @@ npx -y pi-weixin-bridge install
 npx -y github:ReachForStar/pi-weixin-bridge install
 ```
 
-`install` 会依次：① 显示二维码供微信扫码绑定（已有账号则跳过）→ ② 启动内置后台 daemon（崩溃自动重启，零第三方依赖）→ ③ 生成隐藏窗口启动/停止快捷方式。
+`install` 会依次：① 交互式选择保存路径（状态目录 / pi 工作目录，回车用默认，可 `install --yes` 跳过询问）→ ② 显示二维码供微信扫码绑定（已有账号则跳过）→ ③ 启动内置后台 daemon（崩溃自动重启，零第三方依赖）→ ④ 生成隐藏窗口启动/停止快捷方式（仅 Windows）。
+
+路径选择说明：
+
+- **状态目录**：账号凭据、会话上下文、后台日志的存放位置，默认 `~/.pi-weixin-bridge`；选择后写入 `~/.pi-weixin-bridge/config.json`，后续所有进程（含 daemon 子进程）自动生效
+- **pi 工作目录**：Agent 读写文件的工作区，Windows 默认 `D:\pi_weixin_project`，Linux 默认 `~/pi-weixin-project`
+- 安装时会**实际探针校验两个目录可写**；POSIX 下自动收紧权限（状态目录 `700`、账号文件 `600`，凭据不可被其他用户读取）
 
 ### CLI 命令
 
@@ -151,14 +157,45 @@ powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-se
 
 如你已习惯 PM2 生态，仍可用（`npm run pm2:start / pm2:stop / pm2:logs`），但 Windows 上需额外保活 pm2 守护进程；本项目的默认路径与 `install` 命令均已切换到内置 daemon。
 
+### Linux / WSL
+
+本项目跨平台（Windows / Linux / macOS，daemon 杀进程树自动适配平台）。Linux 下同样支持后台 daemon 与会话过期重登（headless），无需扫码即可后台运行。
+
+```bash
+git clone https://github.com/ReachForStar/pi-weixin-bridge.git
+cd pi-weixin-bridge && npm install
+pi-weixin-bridge install --yes   # 非交互安装（全部默认路径）
+pi-weixin-bridge login           # 首次扫码（后台进程无法扫码，必须先交互登录一次）
+pi-weixin-bridge daemon start    # 后台常驻
+```
+
+- 安装向导在非 TTY（如 CI / SSH 无终端）下自动使用默认路径；交互终端则会询问状态目录与工作目录。
+- 开机自启用 **systemd 用户服务**（免 root）：
+  ```bash
+  pi-weixin-bridge daemon install-boot     # 注册并 enable systemd user service
+  pi-weixin-bridge daemon uninstall-boot   # 移除
+  ```
+  如需**未登录也随开机启动**，请管理员执行 `loginctl enable-linger <用户名>`。
+- WSL 需启用 systemd（`wsl --update` + 发行版内 systemd 作为 PID 1），否则 `daemon install-boot` 会提示不可用，可手动 `daemon start`。
+- 凭据文件在 Linux 下自动收紧为 `600`、状态目录 `700`。
+- 注意：WSL 与 Windows 的 `~` 不同，两端账号/状态相互独立，互不干扰。
+
 ## 配置
 
-通过环境变量覆盖默认配置：
+配置解析优先级：**环境变量 > `~/.pi-weixin-bridge/config.json`（安装向导写入）> 平台默认**。
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | 状态目录（账号凭据、工作区） |
-| `PI_WEIXIN_WORKSPACE` | `D:\pi_weixin_project` | pi 会话的工作目录（Agent 在此读写文件） |
+| `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | 状态目录（账号凭据、会话上下文、daemon 日志） |
+| `PI_WEIXIN_WORKSPACE` | Windows `D:\pi_weixin_project` / 其他 `~/pi-weixin-project` | pi 会话的工作目录（Agent 在此读写文件） |
+
+`config.json` 示例（由 `install` 向导生成，可手改）：
+
+```json
+{ "stateDir": "D:\\data\\piwx", "workspace": "D:\\pi_weixin_project" }
+```
+
+权限：POSIX 下状态目录与账号凭据文件会自动收紧为 `700` / `600`；Windows 依赖用户目录 ACL（默认即仅当前用户可访问）。
 
 ## 项目结构
 
@@ -215,7 +252,8 @@ test/                 # 单元测试（vitest）
 - ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
 - ✅ context_token / typing ticket 持久化（重启恢复）
 - ✅ 斜杠命令：`/help`、`/status`、`/new`（新对话），未知命令交由 pi
-- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启计划任务，零第三方依赖；PM2 作为可选路径保留）
+- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / Linux systemd 用户服务；PM2 作为可选路径保留）
+- ✅ 跨平台（Windows / Linux / macOS），安装向导交互式选择保存路径 + 凭据权限加固（POSIX 700/600）
 - ⬜ 出站语音（需 silk 编码，未做）
 
 ## ⚠️ 安全提示
@@ -242,6 +280,9 @@ CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 2
 |---|---|
 | 启动弹 node.exe 控制台框 | 用 daemon（内置）或 PM2 fork 模式 + bin 包装器（已默认）；勿用 tsx CLI 直接拉起（会额外派生无 `windowsHide` 的子进程） |
 | 后台会话过期，收不到消息 | 后台模式无法扫码，日志提示运行 `pi-weixin-bridge login` 重新扫码，扫码后服务自动恢复（旧版 PM2 方式会挂死在等待 stdin，1.4.0 已修复） |
+| 自定义的保存路径不生效 | 路径写入 `~/.pi-weixin-bridge/config.json`（安装向导生成）；运行时环境变量 `PI_WEIXIN_STATE_DIR`/`PI_WEIXIN_WORKSPACE` 优先于 config.json。改完需 `daemon restart` |
+| Linux `daemon install-boot` 提示 systemd 不可用 | WSL 未启用 systemd（需 `wsl --update` 且 systemd 为 PID 1）；可手动 `daemon start` 后台运行 |
+| 状态目录 / 凭据权限 | POSIX 下状态目录自动 `700`、账号文件 `600`；若目录属主不是当前用户则 chmod 会静默跳过，请检查目录归属 |
 | 发图片但 pi 说“看不到图” | pi 全局 `images.blockImages` 为 true 会在送入模型前剥离图片；改为 false（`~/.pi/agent/settings.json`） |
 | 提示会话过期 / 要求重扫 | errcode -14，运行 `pi-weixin-bridge login` 重新扫码 |
 | 消息被重复处理 / 冲突 | 同一微信账号勿多实例同时轮询 getUpdates；确保只有一个服务在跑 |

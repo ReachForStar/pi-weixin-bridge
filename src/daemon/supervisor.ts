@@ -103,7 +103,16 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
     logger.warn(
       `[supervisor] 桥接进程异常退出（code=${code ?? "spawn失败"}），${backoff / 1000}s 后重启`,
     );
-    await new Promise((r) => setTimeout(r, backoff));
+    // 退避等待：停止信号/条件到达时立即唤醒（SIGTERM 后不睡满 backoff）
+    await new Promise<void>((resolve) => {
+      const deadline = Date.now() + backoff;
+      const timer = setInterval(() => {
+        if (shouldStop() || Date.now() >= deadline) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 200);
+    });
   }
 
   rmSync(pidFile, { force: true });

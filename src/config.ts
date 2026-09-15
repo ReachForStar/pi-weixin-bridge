@@ -1,5 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /** iLink-App-ClientVersion 编码：0x00MMNNPP（major<<16 | minor<<8 | patch） */
 function buildClientVersion(version: string): number {
@@ -13,12 +14,50 @@ function buildClientVersion(version: string): number {
 // 与官方 @tencent-weixin/openclaw-weixin 保持一致的协议标识，确保服务端兼容
 const CHANNEL_VERSION = "2.4.6";
 
-/** 状态目录（账号凭据、pi 工作区） */
-export const STATE_DIR = process.env.PI_WEIXIN_STATE_DIR || join(homedir(), ".pi-weixin-bridge");
+/**
+ * 引导目录：固定为 ~/.pi-weixin-bridge，存放 config.json（安装向导写入）。
+ * 即使状态目录被自定义到别处，配置仍可被发现。
+ */
+export const BOOTSTRAP_DIR = join(homedir(), ".pi-weixin-bridge");
+/** 安装向导写入的持久化配置 */
+export const CONFIG_FILE = join(BOOTSTRAP_DIR, "config.json");
+
+export interface BridgeSettings {
+  stateDir?: string;
+  workspace?: string;
+}
+
+/** 读取安装向导写入的 config.json（不存在或损坏时回退默认，不抛错） */
+export function loadSettings(): BridgeSettings {
+  if (!existsSync(CONFIG_FILE)) return {};
+  try {
+    return JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as BridgeSettings;
+  } catch {
+    return {};
+  }
+}
+
+const settings = loadSettings();
+
+/** 默认 pi 工作目录：Windows 保留既有 D:\pi_weixin_project，其他平台落到用户主目录 */
+export function defaultWorkspace(): string {
+  return process.platform === "win32" ? "D:\\pi_weixin_project" : join(homedir(), "pi-weixin-project");
+}
+
+/** 路径解析：~ 展开 + 相对路径转绝对（安装向导输入用） */
+export function resolveUserPath(input: string): string {
+  let p = input.trim();
+  if (p === "~") return homedir();
+  if (p.startsWith("~/") || p.startsWith("~\\")) p = join(homedir(), p.slice(2));
+  return resolve(p);
+}
+
+/** 状态目录（账号凭据、工作区）：环境变量 > config.json > 引导目录 */
+export const STATE_DIR = process.env.PI_WEIXIN_STATE_DIR || settings.stateDir || BOOTSTRAP_DIR;
 /** 账号凭据持久化文件 */
 export const ACCOUNT_FILE = join(STATE_DIR, "account.json");
-/** pi 会话的工作目录（Agent 在此目录读写文件），可用 PI_WEIXIN_WORKSPACE 覆盖 */
-export const WORKSPACE = process.env.PI_WEIXIN_WORKSPACE || "D:\\pi_weixin_project";
+/** pi 会话的工作目录（Agent 在此目录读写文件）：环境变量 > config.json > 平台默认 */
+export const WORKSPACE = process.env.PI_WEIXIN_WORKSPACE || settings.workspace || defaultWorkspace();
 
 export const CONFIG = {
   /** iLink 固定接入域名（扫码登录始终用它） */

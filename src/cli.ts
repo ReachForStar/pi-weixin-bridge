@@ -6,7 +6,9 @@ import { CONFIG } from "./config.js";
 import { IlinkClient } from "./ilink/client.js";
 import { loginWithQR } from "./ilink/login.js";
 import { loadState, saveState } from "./account.js";
+import { runInstallWizard } from "./wizard.js";
 import {
+  BIN_PATH,
   BRIDGE_LOG_FILE,
   daemonStatus,
   startDaemon,
@@ -26,7 +28,7 @@ function printHelp(): void {
 用法: pi-weixin-bridge <命令>
 
 命令:
-  install         一键安装：扫码绑定微信 + 启动后台 daemon + 创建快捷方式
+  install         一键安装：选择保存路径 + 扫码绑定微信 + 启动后台 daemon + 快捷方式（Windows）
   login           扫码登录 / 重新绑定微信
   start           前台运行桥接服务（默认命令）
   stop            停止后台 daemon
@@ -35,6 +37,9 @@ function printHelp(): void {
   update          更新到最新版（git 安装：git pull + npm install + 重启）
   uninstall       卸载：停止服务、移除自启与快捷方式（保留账号凭据）
   help            显示本帮助
+
+选项:
+  install --yes   非交互安装（全部使用默认路径，不询问）
 
 示例:
   npx -y pi-weixin-bridge install
@@ -52,7 +57,7 @@ function printDaemonHelp(): void {
   status           查看运行状态与日志路径
   restart          重启 daemon
   logs [n]         查看桥接日志末尾 n 行（默认 50）
-  install-boot     注册开机自启（每用户登录计划任务，免管理员）
+  install-boot     注册开机自启（Windows 计划任务 / Linux systemd 用户服务，免管理员）
   uninstall-boot   移除开机自启
   supervise        内部命令：supervisor 进程本体（由 daemon start 拉起，勿手动运行）
 
@@ -77,8 +82,12 @@ async function login(): Promise<boolean> {
   }
 }
 
-/** 运行 create-shortcuts.ps1 生成隐藏窗口快捷方式 */
+/** 运行 create-shortcuts.ps1 生成隐藏窗口快捷方式（仅 Windows） */
 function createShortcuts(): void {
+  if (process.platform !== "win32") {
+    console.log("（非 Windows 平台，跳过快捷方式；自启用 daemon install-boot）");
+    return;
+  }
   const script = join(PKG_ROOT, "create-shortcuts.ps1");
   if (!existsSync(script)) {
     console.log("（未找到 create-shortcuts.ps1，跳过快捷方式）");
@@ -158,15 +167,34 @@ async function runDaemon(args: string[]): Promise<void> {
   }
 }
 
-async function install(): Promise<void> {
+async function install(args: string[]): Promise<void> {
+  const assumeYes = args.includes("--yes") || args.includes("-y");
   console.log("=== pi-weixin-bridge 安装 ===\n");
 
-  // 第 1 步：扫码绑定微信
+  // 第 1 步：选择保存路径（交互询问；结果写入 config.json，后续进程与 daemon 子进程均能读到）
+  console.log("第 1 步：选择保存路径（账号凭据 / 会话上下文 / 后台日志 / 工作目录）");
+  const choice = await runInstallWizard({ assumeYes });
+  if (!choice.fromDefaults) {
+    // 本进程的配置常量已在启动时解析完毕，用 env（优先级最高）重执行自身，
+    // 保证后续登录/daemon 子进程都生效新路径
+    const r = spawnSync(process.execPath, [BIN_PATH, "install", "--yes"], {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        PI_WEIXIN_STATE_DIR: choice.stateDir,
+        PI_WEIXIN_WORKSPACE: choice.workspace,
+      },
+    });
+    process.exit(r.status ?? 1);
+  }
+  console.log("");
+
+  // 第 2 步：扫码绑定微信
   const state = loadState();
   if (state?.botToken) {
     console.log(`已存在登录账号 ${state.accountId}，跳过扫码（重新绑定请用 login 命令）。\n`);
   } else {
-    console.log("第 1 步：扫码绑定微信");
+    console.log("第 2 步：扫码绑定微信");
     const ok = await login();
     if (!ok) {
       console.error("登录失败，安装中止。");
@@ -175,24 +203,25 @@ async function install(): Promise<void> {
     console.log("");
   }
 
-  // 第 2 步：后台 daemon（内置，零第三方依赖：崩溃自动重启 + 日志）
-  console.log("第 2 步：启动后台 daemon");
-  const r = startDaemon();
-  console.log(r.message);
-  if (!r.ok) {
+  // 第 3 步：后台 daemon（内置，零第三方依赖：崩溃自动重启 + 日志）
+  console.log("第 3 步：启动后台 daemon");
+  const d = startDaemon();
+  console.log(d.message);
+  if (!d.ok) {
     console.error("daemon 启动失败，安装中止。");
     process.exit(1);
   }
   console.log("");
 
-  // 第 3 步：快捷方式
-  console.log("第 3 步：创建快捷方式");
+  // 第 4 步：快捷方式（仅 Windows）
+  console.log("第 4 步：创建快捷方式");
   createShortcuts();
   console.log("");
 
   console.log("✅ 安装完成。");
+  console.log(`   - 状态目录: ${choice.stateDir}`);
+  console.log(`   - pi 工作目录: ${choice.workspace}`);
   console.log("   - 服务已后台运行（pi-weixin-bridge status 查看）");
-  console.log("   - 快捷方式：start-pi-weixin-bridge.lnk / stop-pi-weixin-bridge.lnk");
   console.log("   - 开机自启（可选）：pi-weixin-bridge daemon install-boot");
 }
 
@@ -243,7 +272,7 @@ export async function runCli(args: string[]): Promise<void> {
   const command = args[0] ?? "help";
   switch (command) {
     case "install":
-      await install();
+      await install(args.slice(1));
       break;
     case "login":
       await login();

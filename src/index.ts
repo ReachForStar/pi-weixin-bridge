@@ -9,6 +9,9 @@ import { PiSessionManager } from "./pi/sessions.js";
 import { Bridge } from "./bridge.js";
 import { logger } from "./logger/index.js";
 
+/** 退出信号是否已触发（区分“信号导致的等待中断”与真正的致命错误） */
+let shuttingDown = false;
+
 async function doLogin(client: IlinkClient): Promise<AccountState> {
   logger.info("[main] 开始扫码登录...");
   const state = await loginWithQR(client);
@@ -42,6 +45,7 @@ async function main(): Promise<void> {
 
   const controller = new AbortController();
   const shutdown = () => {
+    shuttingDown = true;
     logger.info("[main] 收到退出信号，正在停止...");
     controller.abort();
   };
@@ -91,6 +95,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  // 退出信号触发的等待中断属于正常停机（finally 已记录退出），不记为致命错误
+  if (shuttingDown) return;
   logger.error(`[main] 致命错误: ${String(err)}`);
   process.exit(1);
 });

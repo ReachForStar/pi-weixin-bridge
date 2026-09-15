@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,5 +52,31 @@ describe("waitForAccountChange", () => {
     await expect(
       waitForAccountChange(null, controller.signal, 10),
     ).rejects.toThrow();
+  });
+});
+
+// 凭据权限加固：仅 POSIX 有意义（Windows 靠用户目录 ACL）
+describe.skipIf(process.platform === "win32")("saveState 权限加固（POSIX）", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "piwx-perm-"));
+    vi.stubEnv("PI_WEIXIN_STATE_DIR", dir);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("状态目录 700 / 账号文件 600（不受 umask 影响）", async () => {
+    // 故意设置宽松 umask，验证 chmod 仍能收紧
+    process.umask(0o022);
+    const { saveState } = await import("../src/account.js");
+    const { ACCOUNT_FILE } = await import("../src/config.js");
+    saveState({ botToken: "t", accountId: "a", baseUrl: "https://x" });
+    expect(statSync(ACCOUNT_FILE).mode & 0o777).toBe(0o600);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
   });
 });
