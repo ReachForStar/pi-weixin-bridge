@@ -3,7 +3,7 @@
 [![CI](https://github.com/ReachForStar/pi-weixin-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ReachForStar/pi-weixin-bridge/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/pi-weixin-bridge.svg)](https://www.npmjs.com/package/pi-weixin-bridge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node](https://img.shields.io/badge/Node-%3E%3D18-339933.svg)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/Node-%3E%3D22-339933.svg)](https://nodejs.org)
 
 **[中文](./README.md)** | English
 
@@ -200,7 +200,7 @@ Permissions: on POSIX the state dir and account file are tightened to `700` / `6
 ```
 src/
 ├── index.ts          # entry: login, state persistence, session-timeout re-login, graceful shutdown
-├── cli.ts            # CLI commands (install/login/start/stop/status/uninstall/help)
+├── cli.ts            # CLI commands (install/login/start/stop/status/daemon/update/uninstall/help)
 ├── account.ts        # account credential read/write
 ├── config.ts         # protocol constants & path config
 ├── bridge.ts         # main loop: getUpdates → media → pi → sendMessage, typing status
@@ -208,16 +208,26 @@ src/
 │   ├── daemon.ts     # control side: start/stop the supervisor process tree, PID & logs, backoff policy
 │   ├── supervisor.ts # supervisor process: auto-restart the child on crash (exponential backoff)
 │   └── boot.ts       # start-on-boot: register/remove per-user logon scheduled task (no admin)
+├── logger/           # leveled logging (info/warn/error/debug + timestamps)
 ├── ilink/
 │   ├── types.ts      # iLink protocol types & enums
 │   ├── client.ts     # HTTP client (headers, long-poll, send/receive, getconfig/sendtyping/getuploadurl)
+│   ├── errors.ts     # error types (Network/Auth/Protocol/SessionTimeout)
 │   ├── login.ts      # QR login flow (redirect, pairing code, expiry refresh)
+│   ├── context-store.ts # context_token / typing ticket persistence
 │   ├── message.ts    # message body extraction (text / voice-to-text)
-│   └── media.ts      # media: AES encrypt/decrypt, CDN upload/download, inbound parsing, outbound image upload
+│   └── media.ts      # media: AES encrypt/decrypt, CDN upload/download, inbound parsing, outbound media upload
+├── message/          # message building / parsing
+│   ├── parser.ts     # inbound message parsing
+│   ├── builder.ts    # outbound message building (text/image/file/video)
+│   └── markdown.ts   # markdown formatting / escaping / chunking
 └── pi/
     └── sessions.ts   # pi session management (per-WeChat-chat isolation + serialization + image-send tool)
-test/                 # unit tests (vitest: AES encrypt/decrypt, message extraction, iLink request construction)
+examples/             # examples (echo-bot)
+test/                 # unit tests (vitest)
 ```
+
+Minimal example: [examples/echo-bot.ts](examples/echo-bot.ts).
 
 ## iLink protocol essentials
 
@@ -243,7 +253,7 @@ test/                 # unit tests (vitest: AES encrypt/decrypt, message extract
 
 ### Model
 
-- **Default model** `amax/qwen-3.8-27B` (built-in); `/model <provider/modelId>` switches to any model registered in `~/.pi/agent/models.json`, the choice is saved as the default (survives restarts); the `PI_WEIXIN_MODEL` env var can override the default.
+- **Default model reference** `amax/qwen-3.8-27B` (requires that provider to be registered in `~/.pi/agent/models.json`; falls back to pi's default model with a warning if not); `/model <provider/modelId>` switches to any model registered in models.json, the choice is saved as the default (survives restarts); the `PI_WEIXIN_MODEL` env var can override the default.
 
 ### Slash commands
 
@@ -260,7 +270,7 @@ test/                 # unit tests (vitest: AES encrypt/decrypt, message extract
 | `/mcp` | configured MCP servers (with launch commands) |
 | `/mcp <name>` | next message uses tools of that MCP server |
 | `/reload` | reload model config (models.json changes apply immediately, re-applied to existing sessions) |
-| `/usage` | current conversation usage (messages / tool calls / tokens / cost / context) |
+| `/usage` | current conversation usage (messages / tool calls / tokens / cost / context; tokens & cost show 0 with a note when the model service doesn't report usage) |
 | `/stop` | stop the task in progress |
 | `/ping` | liveness check |
 
@@ -296,6 +306,8 @@ CI: GitHub Actions automatically runs typecheck + test + build on push / PR (Nod
 | You send an image but pi says it "can't see it" | pi's global `images.blockImages` being true strips images before they reach the model; set it to false (`~/.pi/agent/settings.json`) |
 | "Session expired" / asked to re-scan | errcode -14; run `pi-weixin-bridge login` to re-scan |
 | Messages processed twice / conflicts | Don't run multiple instances polling getUpdates for the same WeChat account; make sure only one service is running |
+| `/usage` shows 0 tokens / cost | The model service doesn't report usage (some OpenAI-compatible proxies / self-hosted vLLM don't support streaming usage); this is a server-side behavior, not a stats failure — context usage is a local estimate and unaffected |
+| File sent on WeChat not received / `terminated` in logs | Transient CDN download drop; 1.5.3+ retries automatically (3 attempts, increasing backoff, 120s timeout) — resend the file if it still fails |
 | gh / npx network timeout | github.com connectivity fluctuation; configure a proxy (`HTTPS_PROXY`) and retry |
 
 ## License

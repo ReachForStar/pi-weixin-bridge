@@ -3,7 +3,7 @@
 [![CI](https://github.com/ReachForStar/pi-weixin-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ReachForStar/pi-weixin-bridge/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/pi-weixin-bridge.svg)](https://www.npmjs.com/package/pi-weixin-bridge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node](https://img.shields.io/badge/Node-%3E%3D18-339933.svg)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/Node-%3E%3D22-339933.svg)](https://nodejs.org)
 
 **中文** | [English](./README_en.md)
 
@@ -222,13 +222,12 @@ src/
 │   ├── builder.ts    # 出站消息构造（文本/图片/文件/视频）
 │   └── markdown.ts   # markdown 格式化 / 转义 / 分块
 └── pi/
-    └── sessions.ts   # pi 会话管理（按微信会话隔离 + 串行化 + 发图工具）
-docs/                 # 架构与协议文档
-examples/             # 示例（echo-bot）
+    └── sessions.ts   # pi 会话管理（按微信会话隔离 + 串行化 + 发图工具 + skill/MCP 一次性指令）
+examples/             # 示例（echo-bot 最小回声机器人）
 test/                 # 单元测试（vitest）
 ```
 
-详细设计见 [docs/architecture.md](docs/architecture.md) 与 [docs/protocol.md](docs/protocol.md)；最小示例见 [examples/echo-bot.ts](examples/echo-bot.ts)。
+最小示例见 [examples/echo-bot.ts](examples/echo-bot.ts)。
 
 ## iLink 协议要点
 
@@ -256,7 +255,7 @@ test/                 # 单元测试（vitest）
 
 ### 模型
 
-- **默认模型** `amax/qwen-3.8-27B`（内置）；`/model <provider/modelId>` 可切换到 `~/.pi/agent/models.json` 中注册的任何模型，选择会保存为默认（重启后保持）；环境变量 `PI_WEIXIN_MODEL` 可覆盖默认值。
+- **默认模型引用** `amax/qwen-3.8-27B`（需该 provider 已注册在 `~/.pi/agent/models.json`，未注册时回退 pi 默认模型并警告）；`/model <provider/modelId>` 可切换到 models.json 中注册的任何模型，选择会保存为默认（重启后保持）；环境变量 `PI_WEIXIN_MODEL` 可覆盖默认值。
 
 ### 斜杠命令
 
@@ -273,7 +272,7 @@ test/                 # 单元测试（vitest）
 | `/mcp` | 已配置 MCP server 列表（含启动命令） |
 | `/mcp <名称>` | 下一条消息调用该 server 的工具处理 |
 | `/reload` | 重载模型配置（models.json 改动立即生效，并重新应用到现有会话） |
-| `/usage` | 当前对话用量（消息 / 工具调用 / Token / 成本 / 上下文占用） |
+| `/usage` | 当前对话用量（消息 / 工具调用 / Token / 成本 / 上下文占用；模型服务未返回 usage 时 Token/成本为 0 并提示） |
 | `/stop` | 停止当前进行中的任务 |
 | `/ping` | 服务存活检查 |
 
@@ -295,7 +294,7 @@ npm test            # 单元测试（vitest）
 npm run build       # 构建到 dist/
 ```
 
-CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）。
+CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）；push 到 `main` 且测试通过、版本号未发布过时，自动发布 npm 并创建 GitHub Release。
 
 ## 故障排查
 
@@ -309,6 +308,8 @@ CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 2
 | 发图片但 pi 说“看不到图” | pi 全局 `images.blockImages` 为 true 会在送入模型前剥离图片；改为 false（`~/.pi/agent/settings.json`） |
 | 提示会话过期 / 要求重扫 | errcode -14，运行 `pi-weixin-bridge login` 重新扫码 |
 | 消息被重复处理 / 冲突 | 同一微信账号勿多实例同时轮询 getUpdates；确保只有一个服务在跑 |
+| `/usage` 的 Token/成本显示 0 | 模型服务未返回 usage（部分 OpenAI 兼容代理/自建 vllm 不支持 stream usage），服务端行为非统计故障；上下文占用为本地估算不受影响 |
+| 微信发文件收不到 / 日志出现 terminated | CDN 下载瞬断，1.5.3+ 自动重试（3 次递增退避、120s 超时）；仍失败则重发文件 |
 | gh / npx 网络超时 | github.com 连通性波动，配置代理（`HTTPS_PROXY`）后重试 |
 
 ## 许可
