@@ -63,7 +63,7 @@ pi-weixin-bridge start       # run the bridge in the foreground (default)
 pi-weixin-bridge stop        # stop the background daemon
 pi-weixin-bridge status      # show background daemon status
 pi-weixin-bridge daemon      # daemon management: start/stop/status/restart/logs/install-boot/uninstall-boot
-pi-weixin-bridge update      # update to latest (git install: git pull + npm install + restart)
+pi-weixin-bridge update      # update to latest (global install: npm registry + restart; git install: pull + install + restart; npx: re-run install)
 pi-weixin-bridge uninstall   # uninstall (stop service, remove boot task & shortcuts, keep account)
 pi-weixin-bridge help        # help
 ```

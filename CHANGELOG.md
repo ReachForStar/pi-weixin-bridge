@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.2] - 2026-09-16
+
+### Changed
+
+- `update` 命令重写：全局安装（`npm i -g`）从 **npm registry** 拉取最新版（`npm install -g pi-weixin-bridge@latest`）并重启 daemon；git 安装走 pull + install + 重启；npx 临时安装提示重跑 `npx -y pi-weixin-bridge install`（npm registry，不再指向 GitHub 仓库）。
+
 ## [1.5.1] - 2026-09-16
 
 ### Fixed

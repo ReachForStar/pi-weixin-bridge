@@ -63,7 +63,7 @@ pi-weixin-bridge start       # 前台运行桥接服务（默认）
 pi-weixin-bridge stop        # 停止后台 daemon
 pi-weixin-bridge status      # 查看后台 daemon 状态
 pi-weixin-bridge daemon      # daemon 管理：start/stop/status/restart/logs/install-boot/uninstall-boot
-pi-weixin-bridge update      # 更新到最新版（git 安装：git pull + npm install + 重启）
+pi-weixin-bridge update      # 更新到最新版（全局安装：npm registry 拉最新 + 重启；git 安装：pull + install + 重启；npx 提示重跑安装命令）
 pi-weixin-bridge uninstall   # 卸载（停服务、删自启与快捷方式，保留账号）
 pi-weixin-bridge help        # 帮助
 ```

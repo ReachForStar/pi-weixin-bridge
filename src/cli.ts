@@ -34,7 +34,7 @@ function printHelp(): void {
   stop            停止后台 daemon
   status          查看后台 daemon 状态
   daemon          后台 daemon 管理（见 daemon help）
-  update          更新到最新版（git 安装：git pull + npm install + 重启）
+  update          更新到最新版（全局安装：npm i -g 拉 npm 最新；git 安装：pull+install；npx 提示重跑）
   uninstall       卸载：停止服务、移除自启与快捷方式（保留账号凭据）
   help            显示本帮助
 
@@ -238,34 +238,56 @@ function uninstall(): void {
   console.log(`✅ 已停止服务、移除自启与快捷方式（账号凭据保留在 ~/.pi-weixin-bridge/account.json）`);
 }
 
-/** 更新到最新版：git 安装走 git pull + npm install + 重启；npx 安装提示重跑安装命令 */
+/** 更新到最新版：按安装方式分路——
+ * 全局安装（npm i -g）：npm install -g pi-weixin-bridge@latest（npm registry）+ 重启 daemon；
+ * git 安装（克隆仓库）：git pull + npm install + 重启；
+ * npx 临时安装：提示重跑 npx -y pi-weixin-bridge install（npm registry，自动拉最新） */
 function update(): void {
   console.log("=== 更新 pi-weixin-bridge ===\n");
 
-  // 非 git 仓库安装（npx）：每次运行自动获取最新版，重跑安装命令即可
-  if (!existsSync(join(PKG_ROOT, ".git"))) {
-    console.log("当前为 npx 临时安装，每次运行自动获取最新版。重新运行安装命令即可：");
-    console.log("  npx -y github:ReachForStar/pi-weixin-bridge install");
+  const restartDaemon = (): void => {
+    console.log("\n重启服务加载新版本");
+    stopDaemon();
+    const r = startDaemon();
+    console.log(r.message);
+    console.log("\n✅ 更新完成。");
+  };
+
+  // 1) 全局安装（PKG_ROOT 位于 npm 全局目录）：从 npm registry 更新
+  const globalRoot = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: true }).stdout.trim();
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\\?\/$/, "").toLowerCase();
+  if (globalRoot && norm(PKG_ROOT).startsWith(norm(globalRoot))) {
+    console.log("当前为全局安装（npm i -g），从 npm registry 更新到最新版…");
+    const r = spawnSync("npm", ["install", "-g", "pi-weixin-bridge@latest"], { stdio: "inherit", shell: true });
+    if (r.status !== 0) {
+      console.error("npm install -g 失败，更新中止。请检查网络/registry 后重试。");
+      process.exit(1);
+    }
+    restartDaemon();
     return;
   }
 
-  console.log("第 1 步：拉取最新代码");
-  const pull = spawnSync("git", ["pull"], { cwd: PKG_ROOT, stdio: "inherit", shell: true });
-  if (pull.status !== 0) {
-    console.error("git pull 失败，更新中止。");
-    process.exit(1);
+  // 2) git 安装（克隆的仓库）：拉代码 + 装依赖 + 重启
+  if (existsSync(join(PKG_ROOT, ".git"))) {
+    console.log("第 1 步：拉取最新代码");
+    const pull = spawnSync("git", ["pull"], { cwd: PKG_ROOT, stdio: "inherit", shell: true });
+    if (pull.status !== 0) {
+      console.error("git pull 失败，更新中止。");
+      process.exit(1);
+    }
+
+    console.log("\n第 2 步：更新依赖");
+    const install = spawnSync("npm", ["install"], { cwd: PKG_ROOT, stdio: "inherit", shell: true });
+    if (install.status !== 0) console.error("npm install 失败，请手动检查。");
+
+    restartDaemon();
+    return;
   }
 
-  console.log("\n第 2 步：更新依赖");
-  const install = spawnSync("npm", ["install"], { cwd: PKG_ROOT, stdio: "inherit", shell: true });
-  if (install.status !== 0) console.error("npm install 失败，请手动检查。");
-
-  console.log("\n第 3 步：重启服务");
-  stopDaemon();
-  const r = startDaemon();
-  console.log(r.message);
-
-  console.log("\n✅ 更新完成。");
+  // 3) npx 临时安装：npx 每次运行自动从 npm registry 拉最新版，重跑安装命令即可
+  console.log("当前为 npx 临时安装，npx 每次运行自动从 npm 获取最新版，无需手动更新。");
+  console.log("若后台服务还在跑旧版本，重新运行安装命令即可升级：");
+  console.log("  npx -y pi-weixin-bridge install");
 }
 
 export async function runCli(args: string[]): Promise<void> {
