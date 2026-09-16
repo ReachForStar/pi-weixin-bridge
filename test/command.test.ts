@@ -146,6 +146,20 @@ describe("SlashCommandHandler", () => {
     expect(await handler.handle("/usage", { key: "k" })).toContain("还没有会话");
   });
 
+  it("/usage 模型服务未返回 usage 时提示（tokens 全 0 但有助手消息）", async () => {
+    const { handler } = makeHandler({
+      getSessionStats: () => ({
+        ...STATS,
+        assistantMessages: 3,
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cost: 0,
+      }),
+    });
+    const reply = await handler.handle("/usage", { key: "k" });
+    expect(reply).toContain("未返回用量数据");
+    expect(reply).toContain("本地估算");
+  });
+
   it("/stop 有任务时请求中断；无任务时提示", async () => {
     const { handler, mockPi } = makeHandler({ interrupt: vi.fn().mockResolvedValue(true) });
     expect(await handler.handle("/stop", { key: "k" })).toContain("已停止");

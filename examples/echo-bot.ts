@@ -22,6 +22,7 @@ async function main() {
   // 2. 长轮询收消息并回显
   let buf = "";
   let timeout = CONFIG.longPollTimeoutMs;
+  let consecutiveFailures = 0;
   const controller = new AbortController();
   process.on("SIGINT", () => controller.abort());
 
@@ -36,27 +37,37 @@ async function main() {
       for (const msg of resp.msgs ?? []) {
         if (msg.message_type !== MessageType.USER) continue;
         const incoming = parseIncomingMessage(msg);
-        if (!incoming.text) continue;
+        if (!incoming.text || !incoming.fromUserId) continue;
         logger.info(`[in] ${incoming.fromUserId}: ${incoming.text}`);
-        // 原样回显
-        await client.sendMessage(
-          buildTextMessage(`Echo: ${incoming.text}`, {
-            to: incoming.fromUserId,
-            contextToken: incoming.contextToken,
-          }),
-        );
+        // 原样回显（发送失败单独捕获，不干扰轮询循环）
+        try {
+          await client.sendMessage(
+            buildTextMessage(`Echo: ${incoming.text}`, {
+              to: incoming.fromUserId,
+              contextToken: incoming.contextToken,
+            }),
+          );
+        } catch (sendErr) {
+          logger.error(`回复失败: ${String(sendErr)}`);
+        }
       }
+      consecutiveFailures = 0;
     } catch (err) {
       if (controller.signal.aborted) break;
       if (err instanceof SessionTimeoutError) {
         logger.warn("会话超时，请重新运行以扫码登录");
         break;
       }
-      logger.error(`错误: ${String(err)}`);
-      await new Promise((r) => setTimeout(r, 3000));
+      // 与主桥一致：连续失败 5 次后退避升到 30s，避免持久故障高频重试
+      consecutiveFailures++;
+      const backoff = consecutiveFailures >= 5 ? 30_000 : 3_000;
+      logger.error(`错误 (连续 ${consecutiveFailures} 次，${backoff / 1000}s 后重试): ${String(err)}`);
+      await new Promise((r) => setTimeout(r, backoff));
     }
   }
   logger.info("已退出");
+  // 显式退出：SIGINT 监听器与未关闭的 client 句柄会拖住事件循环
+  process.exit(0);
 }
 
 main().catch((err) => {

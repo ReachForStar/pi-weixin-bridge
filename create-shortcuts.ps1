@@ -6,14 +6,22 @@ $WshShell = New-Object -ComObject WScript.Shell
 
 function New-LauncherShortcut {
     param([string]$Name, [string]$TargetPs1)
+    if (-not (Test-Path -LiteralPath $TargetPs1)) {
+        Write-Warning "目标不存在，跳过: $TargetPs1"
+        return
+    }
     $lnkPath = Join-Path $scriptDir $Name
-    $lnk = $WshShell.CreateShortcut($lnkPath)
-    $lnk.TargetPath = "powershell.exe"
-    $lnk.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TargetPs1`""
-    $lnk.WorkingDirectory = $scriptDir
-    $lnk.Description = "pi-weixin-bridge"
-    $lnk.Save()
-    Write-Host "created: $lnkPath"
+    try {
+        $lnk = $WshShell.CreateShortcut($lnkPath)
+        $lnk.TargetPath = "powershell.exe"
+        $lnk.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TargetPs1`""
+        $lnk.WorkingDirectory = $scriptDir
+        $lnk.Description = "pi-weixin-bridge"
+        $lnk.Save()
+        Write-Host "created: $lnkPath"
+    } catch {
+        Write-Warning "创建 $lnkPath 失败: $($_.Exception.Message)"
+    }
 }
 
 New-LauncherShortcut "start-pi-weixin-bridge.lnk" (Join-Path $scriptDir "start-service.ps1")

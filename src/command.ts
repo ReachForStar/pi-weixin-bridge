@@ -51,34 +51,38 @@ export class SlashCommandHandler {
     private accountId: string,
   ) {}
 
-  /** 处理斜杠命令；非斜杠命令或未知命令返回 null（交由 pi 处理） */
+  /** 处理斜杠命令；非斜杠命令或未知命令返回 null（交由 pi 处理）；命令抛错时回复友好提示而非静默失败 */
   async handle(text: string, ctx: SlashContext): Promise<string | null> {
     const trimmed = text.trim();
     if (!trimmed.startsWith("/")) return null;
     const cmd = trimmed.split(/\s+/)[0].toLowerCase();
-    switch (cmd) {
-      case "/help":
-        return HELP_TEXT;
-      case "/status":
-        return this.status();
-      case "/new":
-        return await this.newSession(ctx.key);
-      case "/model":
-        return this.modelCommand(trimmed);
-      case "/skill":
-        return this.skillCommand(trimmed, ctx.key);
-      case "/mcp":
-        return this.mcpCommand(trimmed, ctx.key);
-      case "/reload":
-        return await this.pi.reload();
-      case "/usage":
-        return this.usage(ctx.key);
-      case "/stop":
-        return await this.stop(ctx.key);
-      case "/ping":
-        return "🏓 pong";
-      default:
-        return null; // 未知命令交给 pi
+    try {
+      switch (cmd) {
+        case "/help":
+          return HELP_TEXT;
+        case "/status":
+          return this.status();
+        case "/new":
+          return await this.newSession(ctx.key);
+        case "/model":
+          return this.modelCommand(trimmed);
+        case "/skill":
+          return this.skillCommand(trimmed, ctx.key);
+        case "/mcp":
+          return this.mcpCommand(trimmed, ctx.key);
+        case "/reload":
+          return await this.pi.reload();
+        case "/usage":
+          return this.usage(ctx.key);
+        case "/stop":
+          return await this.stop(ctx.key);
+        case "/ping":
+          return "🏓 pong";
+        default:
+          return null; // 未知命令交给 pi
+      }
+    } catch (err) {
+      return `⚠️ 命令执行失败：${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
@@ -107,7 +111,7 @@ export class SlashCommandHandler {
       return lines.join("\n");
     }
     const info = skills.find((s) => s.name.toLowerCase() === arg.toLowerCase());
-    if (!info) return `未找到 skill：${arg}（/skill 查看列表）`;
+    if (!info) return `未找到 skill：\`${arg}\`（/skill 查看列表）`;
     this.pi.setDirective(key, skillDirective(info));
     return `下一条消息将按 skill「${info.name}」处理。`;
   }
@@ -118,14 +122,15 @@ export class SlashCommandHandler {
     const servers = listMcpServers();
     if (!arg) {
       if (!servers.length) return "未配置 MCP server（~/.pi/agent/mcp.json）。";
-      const lines = [`📋 MCP server（${servers.length}）`, ""];
-      servers.forEach((s, i) => {
+      const lines = [`📋 MCP server（${Math.min(servers.length, LIST_MAX)}）`, ""];
+      servers.slice(0, LIST_MAX).forEach((s, i) => {
         lines.push(`${i + 1}. ${s.name}${s.command ? ` — \`${s.command}\`` : ""}`);
       });
+      if (servers.length > LIST_MAX) lines.push(`… 另有 ${servers.length - LIST_MAX} 个`);
       return lines.join("\n");
     }
     const info = servers.find((s) => s.name.toLowerCase() === arg.toLowerCase());
-    if (!info) return `未找到 MCP server：${arg}（/mcp 查看列表）`;
+    if (!info) return `未找到 MCP server：\`${arg}\`（/mcp 查看列表）`;
     this.pi.setDirective(key, mcpDirective(info));
     return `下一条消息将调用 MCP「${info.name}」的工具处理。`;
   }
@@ -158,6 +163,11 @@ export class SlashCommandHandler {
     const ctx = stats.contextUsage;
     if (ctx?.tokens != null && ctx.percent != null) {
       lines.push(`- 上下文：${ctx.percent.toFixed(1)}%（${fmtTokens(ctx.tokens)} / ${fmtTokens(ctx.contextWindow)}）`);
+    }
+    // provider 未返回 usage 时 tokens 全 0（如部分 OpenAI 兼容代理/自建 vllm 不回传 stream usage），
+    // 明确提示是服务端行为而非统计故障
+    if (stats.tokens.total === 0 && stats.assistantMessages > 0) {
+      lines.push("- 注意：当前模型服务未返回用量数据，Token/成本无法统计（上下文为本地估算）");
     }
     return lines.join("\n");
   }

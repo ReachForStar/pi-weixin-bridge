@@ -6,10 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+# 同分支串行；不取消进行中的（避免中断进行中的 npm 发布）
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # 质量检查：类型检查 + 单元测试 + 构建（Node 22；pi-coding-agent SDK 及其内置 undici 要求 Node ≥22）
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
     strategy:
       matrix:
         node-version: [22]
@@ -39,6 +46,7 @@ jobs:
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write   # 创建 GitHub Release 需要
     steps:
@@ -74,9 +82,10 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.check.outputs.skip == 'no'
+        # 表达式经 env 传入，不直接插值进 shell（防注入）；release 幂等（已存在则跳过）
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.check.outputs.version }}
         run: |
-          VERSION=${{ steps.check.outputs.version }}
           node scripts/extract-changelog.mjs "$VERSION" > release-notes.md
-          gh release create "v$VERSION" --title "v$VERSION" --notes-file release-notes.md
+          gh release view "v$VERSION" >/dev/null 2>&1 || gh release create "v$VERSION" --title "v$VERSION" --notes-file release-notes.md

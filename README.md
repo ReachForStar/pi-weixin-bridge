@@ -115,7 +115,9 @@ pi-weixin-bridge daemon restart   # 重启
 pi-weixin-bridge daemon stop      # 停止
 ```
 
-与 PM2 的差异：内置 daemon 零第三方依赖，PID/日志落在 `~/.pi-weixin-bridge/daemon/`（npx 临时目录被清理也不受影响），跨平台（Windows/POSIX）。
+内置 daemon 零第三方依赖，PID/日志落在 `~/.pi-weixin-bridge/daemon/`（npx 临时目录被清理也不受影响），跨平台（Windows/POSIX）。
+
+> **曾用 PM2 运行？** 1.6.0 起不再提供 PM2 配置。先 `pm2 stop pi-weixin-bridge` 停掉旧进程（避免两个实例同时轮询同一账号），再用 `pi-weixin-bridge daemon start` 启动。
 
 **会话过期（errcode -14）重新扫码**：后台模式无法交互扫码，日志会提示：
 
@@ -152,10 +154,6 @@ powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-se
 ```
 
 脚本说明：`start-service.ps1` / `stop-service.ps1` 以 `Start-Process -WindowStyle Hidden` 调用 `daemon start/stop`；`create-shortcuts.ps1` 生成以 `powershell -WindowStyle Hidden` 运行上述脚本的快捷方式（`.lnk` 为本机生成，已 gitignore）。
-
-### PM2（可选替代）
-
-如你已习惯 PM2 生态，仍可用（`npm run pm2:start / pm2:stop / pm2:logs`），但 Windows 上需额外保活 pm2 守护进程；本项目的默认路径与 `install` 命令均已切换到内置 daemon。
 
 ### Linux / WSL
 
@@ -252,7 +250,7 @@ test/                 # 单元测试（vitest）
 - ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
 - ✅ context_token / typing ticket 持久化（重启恢复）
 - ✅ 斜杠命令（10 个：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/reload` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
-- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / Linux systemd 用户服务；PM2 作为可选路径保留）
+- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / Linux systemd 用户服务）
 - ✅ 跨平台（Windows / Linux / macOS），安装向导交互式选择保存路径 + 凭据权限加固（POSIX 700/600）
 - ⬜ 出站语音（需 silk 编码，未做）
 
@@ -303,8 +301,8 @@ CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 2
 
 | 现象 | 原因 / 解决 |
 |---|---|
-| 启动弹 node.exe 控制台框 | 用 daemon（内置）或 PM2 fork 模式 + bin 包装器（已默认）；勿用 tsx CLI 直接拉起（会额外派生无 `windowsHide` 的子进程） |
-| 后台会话过期，收不到消息 | 后台模式无法扫码，日志提示运行 `pi-weixin-bridge login` 重新扫码，扫码后服务自动恢复（旧版 PM2 方式会挂死在等待 stdin，1.4.0 已修复） |
+| 启动弹 node.exe 控制台框 | 用内置 daemon（已默认）；勿用 tsx CLI 直接拉起（会额外派生无 `windowsHide` 的子进程） |
+| 后台会话过期，收不到消息 | 后台模式无法扫码，日志提示运行 `pi-weixin-bridge login` 重新扫码，扫码后服务自动恢复 |
 | 自定义的保存路径不生效 | 路径写入 `~/.pi-weixin-bridge/config.json`（安装向导生成）；运行时环境变量 `PI_WEIXIN_STATE_DIR`/`PI_WEIXIN_WORKSPACE` 优先于 config.json。改完需 `daemon restart` |
 | Linux `daemon install-boot` 提示 systemd 不可用 | WSL 未启用 systemd（需 `wsl --update` 且 systemd 为 PID 1）；可手动 `daemon start` 后台运行 |
 | 状态目录 / 凭据权限 | POSIX 下状态目录自动 `700`、账号文件 `600`；若目录属主不是当前用户则 chmod 会静默跳过，请检查目录归属 |

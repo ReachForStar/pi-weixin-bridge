@@ -6,7 +6,14 @@ coverage/
 state/
 tmp/
 *.lnk
-.env
+# 环境变量与敏感文件（密钥/证书）
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+secrets/
 .DS_Store
 .npmrc
 .qmd/

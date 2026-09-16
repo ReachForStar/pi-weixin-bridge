@@ -10,6 +10,8 @@ on:
 jobs:
   check-token:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,8 +32,12 @@ jobs:
           TODAY=$(date +%s)
           EXPIRES=$(date -d "$TOKEN_EXPIRES" +%s)
           WARN_AT=$((EXPIRES - WARN_DAYS * 86400))
-          # whoami 实测令牌是否仍有效
-          if npm whoami >/dev/null 2>&1; then WHOAMI=valid; else WHOAMI=invalid; fi
+          # whoami 实测令牌是否仍有效（重试 3 次，容忍 npm registry 抖动，避免误报失效）
+          WHOAMI=invalid
+          for i in 1 2 3; do
+            if npm whoami >/dev/null 2>&1; then WHOAMI=valid; break; fi
+            [ "$i" -lt 3 ] && sleep 10
+          done
           echo "whoami=$WHOAMI"
 
           if [ "$WHOAMI" = "invalid" ]; then

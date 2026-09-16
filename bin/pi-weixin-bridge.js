@@ -9,8 +9,18 @@ const args = process.argv.slice(2);
 const command = args[0] ?? "start";
 
 if (command === "start" || command === "serve") {
-  await import("../src/index.ts");
+  try {
+    await import("../src/index.ts");
+  } catch (error) {
+    console.error(`桥接服务启动失败: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 } else {
-  const { runCli } = await import("../src/cli.ts");
-  await runCli(args);
+  try {
+    const { runCli } = await import("../src/cli.ts");
+    await runCli(args);
+  } catch (error) {
+    console.error(`命令执行失败: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 }

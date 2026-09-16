@@ -4,6 +4,8 @@
 $ErrorActionPreference = "Stop"
 $TaskName = "pi-weixin-bridge"
 if ($args.Count -lt 2) { throw "用法: install-boot.ps1 <Execute> <Argument>" }
+if (-not $env:USERDOMAIN -or -not $env:USERNAME) { throw "无法确定当前用户（USERDOMAIN/USERNAME 未设置）。请在交互式会话中运行此脚本。" }
+if (-not (Test-Path -LiteralPath $args[0] -PathType Leaf)) { throw "可执行文件不存在: $args[0]" }
 $action = New-ScheduledTaskAction -Execute $args[0] -Argument $args[1]
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)

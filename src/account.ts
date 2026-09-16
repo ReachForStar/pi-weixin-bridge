@@ -1,13 +1,15 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { ACCOUNT_FILE, STATE_DIR } from "./config.js";
+import { logger } from "./logger/index.js";
 import type { AccountState } from "./ilink/login.js";
 
-/** 读取已保存的微信账号凭据 */
+/** 读取已保存的微信账号凭据；损坏/不可读时 warn 并返回 null（不静默吞错，便于区分“未登录”与“文件损坏”） */
 export function loadState(): AccountState | null {
   if (!existsSync(ACCOUNT_FILE)) return null;
   try {
     return JSON.parse(readFileSync(ACCOUNT_FILE, "utf8")) as AccountState;
-  } catch {
+  } catch (err) {
+    logger.warn(`account.json 读取/解析失败（将视为未登录）：${String(err)}`);
     return null;
   }
 }
@@ -22,10 +24,12 @@ export function hardenStateDir(): void {
   }
 }
 
-/** 持久化微信账号凭据；POSIX 下收紧权限（目录 700 / 文件 600，凭据不可被其他用户读取） */
+/** 持久化微信账号凭据；原子写（tmp+rename，进程中途被杀不会留下半截文件）；POSIX 下收紧权限（目录 700 / 文件 600，凭据不可被其他用户读取） */
 export function saveState(state: AccountState): void {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
-  writeFileSync(ACCOUNT_FILE, JSON.stringify(state, null, 2), "utf8");
+  const tmpFile = `${ACCOUNT_FILE}.tmp`;
+  writeFileSync(tmpFile, JSON.stringify(state, null, 2), "utf8");
+  renameSync(tmpFile, ACCOUNT_FILE);
   if (process.platform !== "win32") {
     hardenStateDir();
     try {

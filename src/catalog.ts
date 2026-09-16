@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { WORKSPACE } from "./config.js";
+import { logger } from "./logger/index.js";
 
 export interface SkillInfo {
   name: string;
@@ -29,14 +30,19 @@ export function listSkills(): SkillInfo[] {
   const out: SkillInfo[] = [];
   for (const dir of dirs) {
     if (!existsSync(dir)) continue;
-    for (const s of loadSkillsFromDir({ dir, source: "catalog" }).skills) {
-      if (seen.has(s.name)) continue;
-      seen.add(s.name);
-      out.push({
-        name: s.name,
-        description: (s.description || "").split("\n")[0].slice(0, 60),
-        filePath: s.filePath,
-      });
+    try {
+      // 单个目录坏文件不拖垮整个列表
+      for (const s of loadSkillsFromDir({ dir, source: "catalog" }).skills) {
+        if (seen.has(s.name)) continue;
+        seen.add(s.name);
+        out.push({
+          name: s.name,
+          description: (s.description || "").split("\n")[0].slice(0, 60),
+          filePath: s.filePath,
+        });
+      }
+    } catch (err) {
+      logger.warn(`skill 目录 ${dir} 读取失败（已跳过）：${String(err)}`);
     }
   }
   return out;
@@ -54,7 +60,8 @@ export function listMcpServers(): McpServerInfo[] {
       name,
       command: c.command ? `${c.command} ${(c.args ?? []).join(" ")}`.trim() : "",
     }));
-  } catch {
+  } catch (err) {
+    logger.warn(`mcp.json 读取失败（视为未配置）：${String(err)}`);
     return [];
   }
 }

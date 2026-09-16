@@ -1,12 +1,12 @@
 {
   "name": "pi-weixin-bridge",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "微信 ClawBot ↔ pi 桥接服务（iLink 协议直连）| Bridge service connecting the pi coding agent to WeChat ClawBot via the iLink protocol",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
-  "main": "dist/index.js",
+  "main": "src/index.ts",
   "bin": {
     "pi-weixin-bridge": "./bin/pi-weixin-bridge.js"
   },
@@ -15,7 +15,6 @@
     "src",
     "scripts",
     "*.ps1",
-    "ecosystem.config.cjs",
     "README.md",
     "LICENSE",
     "NOTICE",
@@ -27,12 +26,7 @@
     "serve": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "pm2:start": "pm2 start ecosystem.config.cjs",
-    "pm2:stop": "pm2 stop pi-weixin-bridge",
-    "pm2:restart": "pm2 restart pi-weixin-bridge",
-    "pm2:logs": "pm2 logs pi-weixin-bridge",
-    "pm2:save": "pm2 save"
+    "test:watch": "vitest"
   },
   "keywords": [
     "weixin",
@@ -69,7 +63,6 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/qrcode-terminal": "^0.12.2",
-    "pm2": "^7.0.3",
     "typescript": "^5.8.0",
     "vitest": "^3.2.7"
   }

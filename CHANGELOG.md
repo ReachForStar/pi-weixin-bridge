@@ -2,6 +2,22 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.1] - 2026-09-16
+
+### Changed
+
+- **PM2 移除**：内置 daemon 成为唯一后台常驻方案；删除 `ecosystem.config.cjs`、`pm2` 开发依赖与 `npm run pm2:*` 脚本。曾用 PM2 运行请先 `pm2 stop pi-weixin-bridge` 再 `daemon start`（避免两实例同轮询一账号）。
+- CI 加固：job 最小权限 `permissions` + `timeout-minutes` + `concurrency`（同分支串行、不中断进行中的发布）；Release 步骤版本号经 `env` 传入（防表达式注入）且幂等（npm 已发但 Release 创建失败时重跑可补建）。
+
+### Fixed
+
+- 斜杠命令抛错时回复“⚠️ 命令执行失败：…”（此前静默吞错无反馈）；MCP 列表加 100 条上限。
+- `/usage` 在模型服务未返回 usage（tokens 全 0 但有助手消息，如部分 OpenAI 兼容代理/自建 vllm）时提示“未返回用量数据”，不再让 0 值看起来像统计故障。
+- `account.json` 原子写（tmp+rename，进程中途被杀不损坏）；读取/解析失败打 warn（不再静默视为未登录）。
+- skill 目录逐个 try/catch（单目录坏文件不拖垮列表）；mcp.json 损坏打 warn。
+- `bin` 入口、`extract-changelog.mjs`（正则转义/CWD 无关/段落缺失报错）、PowerShell 脚本（启动/快捷方式/自启守卫与参数校验）、`.gitignore`（`.env*`/密钥证书类）健壮性加固。
+- `main` 字段指向包内真实存在的 `src/index.ts`（CLI 包经 bin 运行，不经 main）。
+
 ## [1.6.0] - 2026-09-16
 
 ### Added

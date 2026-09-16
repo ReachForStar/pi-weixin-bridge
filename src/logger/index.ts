@@ -1,4 +1,4 @@
-// 分级日志：debug/info/warn/error + ISO 时间戳，便于 PM2 日志排查。
+// 分级日志：debug/info/warn/error + ISO 时间戳，便于 daemon 日志排查。
 // 级别经 LOG_LEVEL 环境变量控制（默认 info）。
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
