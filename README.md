@@ -61,7 +61,7 @@ pi-weixin-bridge install     # 一键安装（扫码绑定 + 后台 daemon + 快
 pi-weixin-bridge login       # 扫码登录 / 重新绑定微信
 pi-weixin-bridge start       # 前台运行桥接服务（默认）
 pi-weixin-bridge stop        # 停止后台 daemon
-pi-weixin-bridge status      # 查看后台 daemon 状态
+pi-weixin-bridge status      # 查看后台 daemon 状态（pm2 list 风格表格：重启次数 / CPU / 内存 / 运行时长）
 pi-weixin-bridge daemon      # daemon 管理：start/stop/status/restart/logs/install-boot/uninstall-boot
 pi-weixin-bridge update      # 更新到最新版（全局安装：npm registry 拉最新 + 重启；git 安装：pull + install + 重启；npx 提示重跑安装命令）
 pi-weixin-bridge uninstall   # 卸载（停服务、删自启与快捷方式，保留账号）
@@ -109,7 +109,7 @@ npm start
 
 # 2. 启动后台 daemon（supervisor 常驻：崩溃自动重启、指数退避、日志轮转）
 pi-weixin-bridge daemon start
-pi-weixin-bridge daemon status    # 查看状态
+pi-weixin-bridge daemon status    # 查看状态（pm2 list 风格表格）
 pi-weixin-bridge daemon logs      # 查看日志（末尾 50 行）
 pi-weixin-bridge daemon restart   # 重启
 pi-weixin-bridge daemon stop      # 停止

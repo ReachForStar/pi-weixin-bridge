@@ -61,7 +61,7 @@ pi-weixin-bridge install     # one-line install (QR bind + background daemon + s
 pi-weixin-bridge login       # QR login / re-bind WeChat
 pi-weixin-bridge start       # run the bridge in the foreground (default)
 pi-weixin-bridge stop        # stop the background daemon
-pi-weixin-bridge status      # show background daemon status
+pi-weixin-bridge status      # show background daemon status (pm2 list style table: restarts / CPU / memory / uptime)
 pi-weixin-bridge daemon      # daemon management: start/stop/status/restart/logs/install-boot/uninstall-boot
 pi-weixin-bridge update      # update to latest (global install: npm registry + restart; git install: pull + install + restart; npx: re-run install)
 pi-weixin-bridge uninstall   # uninstall (stop service, remove boot task & shortcuts, keep account)
@@ -109,7 +109,7 @@ npm start
 
 # 2. Start the background daemon (a supervisor keeps it alive: auto-restart on crash, exponential backoff, log rotation)
 pi-weixin-bridge daemon start
-pi-weixin-bridge daemon status    # show status
+pi-weixin-bridge daemon status    # show status (pm2 list style table)
 pi-weixin-bridge daemon logs      # view logs (last 50 lines)
 pi-weixin-bridge daemon restart   # restart
 pi-weixin-bridge daemon stop      # stop

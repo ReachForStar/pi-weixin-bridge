@@ -11,12 +11,14 @@ import {
   BIN_PATH,
   BRIDGE_LOG_FILE,
   daemonStatus,
+  readRestartCount,
   startDaemon,
   stopDaemon,
   tailLog,
 } from "./daemon/daemon.js";
 import { installBootTask, uninstallBootTask } from "./daemon/boot.js";
 import { runSupervisor } from "./daemon/supervisor.js";
+import { procStats, renderStatusTable, type StatusRow } from "./daemon/procs.js";
 
 // 包根目录（src 的上级），用于定位 ps1 脚本与计划任务
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -115,15 +117,7 @@ async function runDaemon(args: string[]): Promise<void> {
       break;
     }
     case "status": {
-      const st = daemonStatus();
-      if (st.running) {
-        console.log(
-          `运行中：supervisor pid ${st.supervisorPid}${st.bridgePid ? `，桥接 pid ${st.bridgePid}` : "（桥接进程未就绪）"}`,
-        );
-      } else {
-        console.log("未运行");
-      }
-      console.log(`桥接日志: ${BRIDGE_LOG_FILE}`);
+      await printDaemonStatus();
       break;
     }
     case "restart": {
@@ -288,6 +282,51 @@ function update(): void {
   console.log("当前为 npx 临时安装，npx 每次运行自动从 npm 获取最新版，无需手动更新。");
   console.log("若后台服务还在跑旧版本，重新运行安装命令即可升级：");
   console.log("  npx -y pi-weixin-bridge install");
+}
+
+/** 构建 daemon 状态表格（两行：supervisor + 桥接） */
+async function buildStatusRows(): Promise<StatusRow[]> {
+  const st = daemonStatus();
+  const restarts = readRestartCount();
+  const [sup, bridge] = await Promise.all([
+    st.supervisorPid ? procStats(st.supervisorPid) : Promise.resolve(null),
+    st.bridgePid ? procStats(st.bridgePid) : Promise.resolve(null),
+  ]);
+  return [
+    {
+      id: 0,
+      name: "pi-weixin-supervisor",
+      mode: "fork",
+      restarts,
+      online: st.running,
+      pid: st.supervisorPid,
+      ...(sup ?? {}),
+    },
+    {
+      id: 1,
+      name: "pi-weixin-bridge",
+      mode: "fork",
+      restarts,
+      online: st.running && st.bridgePid !== undefined,
+      pid: st.bridgePid,
+      ...(bridge ?? {}),
+    },
+  ];
+}
+
+/** pm2 list 风格的 status 输出：表格 + pid + 日志路径 */
+export async function printDaemonStatus(): Promise<void> {
+  const rows = await buildStatusRows();
+  console.log(renderStatusTable(rows));
+  const st = daemonStatus();
+  if (st.running) {
+    console.log(
+      `\nsupervisor pid ${st.supervisorPid}${st.bridgePid ? `，桥接 pid ${st.bridgePid}` : "（桥接进程未就绪）"}`,
+    );
+  } else {
+    console.log("\n未运行（pi-weixin-bridge daemon start 启动）");
+  }
+  console.log(`桥接日志: ${BRIDGE_LOG_FILE}`);
 }
 
 export async function runCli(args: string[]): Promise<void> {

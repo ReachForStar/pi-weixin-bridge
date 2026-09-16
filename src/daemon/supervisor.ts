@@ -57,6 +57,10 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
     return;
   }
   writeFileSync(pidFile, String(process.pid), "utf8");
+  // 重启计数：每次 supervisor 启动归零（status 表格显示），崩溃重启时递增
+  const restartFile = join(daemonDir, "restarts.count");
+  writeFileSync(restartFile, "0", "utf8");
+  let restarts = 0;
 
   let stopRequested = false;
   if (!opts.shouldStop) {
@@ -100,6 +104,12 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
     }
     const uptime = Date.now() - startedAt;
     backoff = nextBackoffMs(backoff, uptime);
+    restarts += 1;
+    try {
+      writeFileSync(restartFile, String(restarts), "utf8");
+    } catch {
+      // 计数落盘失败不影响重启
+    }
     logger.warn(
       `[supervisor] 桥接进程异常退出（code=${code ?? "spawn失败"}），${backoff / 1000}s 后重启`,
     );

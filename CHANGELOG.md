@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.0] - 2026-09-16
+
+### Added
+
+- `status` 命令 pm2 list 风格表格：supervisor / 桥接两行的 id、name、mode、重启次数、状态、CPU%（两次采样差值）、内存、运行时长；未运行时显示 offline 表格；重启次数由 supervisor 持久化（每次启动归零、崩溃重启递增）。
+
 ## [1.5.3] - 2026-09-16
 
 ### Fixed

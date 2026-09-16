@@ -61,6 +61,16 @@ export interface DaemonStatus {
   bridgePid?: number;
 }
 
+/** 崩溃重启次数（supervisor 每次启动归零、每次崩溃重启递增；无记录为 0） */
+export function readRestartCount(daemonDir: string = DAEMON_DIR): number {
+  try {
+    const n = Number.parseInt(readFileSync(join(daemonDir, "restarts.count"), "utf8").trim(), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function daemonStatus(): DaemonStatus {
   const supervisorPid = readPidOrNull(SUPERVISOR_PID_FILE);
   const running = supervisorPid !== null && isPidAlive(supervisorPid);
