@@ -12,6 +12,7 @@ function fakeRuntime(models: Array<{ provider: string; id: string; name: string 
     getModel: (provider: string, modelId: string) => map.get(`${provider}/${modelId}`),
     getAvailable: async () => models,
     getModels: () => models,
+    refresh: async () => ({}),
   } as unknown as ModelRuntime;
 }
 
@@ -104,6 +105,23 @@ describe("PiSessionManager 模型管理", () => {
     expect(mgr.consumeDirective("k")).toBe("【skill 指令】…");
     expect(mgr.consumeDirective("k")).toBeUndefined(); // 一次性
     expect(mgr.consumeDirective("other")).toBeUndefined();
+  });
+
+  it("reload：无会话时报告当前模型；模型未注册时提示回退", async () => {
+    const mgr = await makeManager(fakeRuntime(MODELS));
+    const r1 = await mgr.reload();
+    expect(r1).toContain("重载完成");
+    expect(r1).toContain("无活动会话");
+
+    // 未注册的模型引用
+    const { PiSessionManager } = await import("../src/pi/sessions.js");
+    const mgr2 = new PiSessionManager();
+    await mgr2.init(fakeRuntime(MODELS) as ModelRuntime);
+    // 通过 switchModel 切到一个随后被“注销”的模型不可行，改用未知引用直接验证 resolve 失败路径：
+    // 这里用 listModels 的运行时直接构造：把 modelRef 设为未注册值
+    (mgr2 as unknown as { modelRef: string }).modelRef = "ghost/model";
+    const r2 = await mgr2.reload();
+    expect(r2).toContain("未在 pi 配置中注册");
   });
 
   it("listModels：无模型时提示", async () => {

@@ -238,7 +238,7 @@ test/                 # unit tests (vitest: AES encrypt/decrypt, message extract
 - ✅ Inbound media: image (decrypt → pi vision), voice (server-side speech-to-text), file/video (decrypt to disk → report path)
 - ✅ Outbound media: image/file/video uploaded to CDN and sent (`send_weixin_image` tool + builder)
 - ✅ Long-text chunked sending (markdown chunking, avoids WeChat single-message length limit)
-- ✅ Slash commands (`/help` `/status` `/new` `/model` `/skill` `/mcp` `/usage` `/stop` `/ping`), unknown commands fall through to pi
+- ✅ Slash commands (`/help` `/status` `/new` `/model` `/skill` `/mcp` `/reload` `/usage` `/stop` `/ping`), unknown commands fall through to pi
 - ✅ Built-in background daemon (auto-restart on crash + log rotation + start-on-boot, zero third-party deps; Windows scheduled task / Linux systemd user service; PM2 kept as an optional path)
 - ✅ Cross-platform (Windows / Linux / macOS), install wizard with interactive path selection + credentials permission hardening (POSIX 700/600)
 - ⬜ Outbound voice (needs silk encoding, not done)
@@ -261,6 +261,7 @@ test/                 # unit tests (vitest: AES encrypt/decrypt, message extract
 | `/skill <name>` | next message is handled by that skill (pi reads its SKILL.md first) |
 | `/mcp` | configured MCP servers (with launch commands) |
 | `/mcp <name>` | next message uses tools of that MCP server |
+| `/reload` | reload model config (models.json changes apply immediately, re-applied to existing sessions) |
 | `/usage` | current conversation usage (messages / tool calls / tokens / cost / context) |
 | `/stop` | stop the task in progress |
 | `/ping` | liveness check |

@@ -60,6 +60,29 @@ export class PiSessionManager {
     return d;
   }
 
+  /** 重新加载模型运行时配置（models.json 改动立即生效，不走网络），并把当前模型重新应用到所有已有会话 */
+  async reload(): Promise<string> {
+    if (!this.modelRuntime) return "模型运行时未初始化";
+    try {
+      await this.modelRuntime.refresh();
+    } catch (err) {
+      logger.warn(`[pi] 模型目录刷新失败: ${String(err)}`);
+    }
+    this.modelWarned = false; // 允许重新评估回退
+    const model = this.resolveModel(this.modelRef);
+    if (!model) {
+      return `重载完成。当前模型 ${this.modelRef} 未在 pi 配置中注册（新会话将回退 pi 默认模型）`;
+    }
+    const sessions = [...this.sessions.values()];
+    if (!sessions.length) return `重载完成。当前模型：${this.modelRef}（无活动会话）`;
+    const results = await Promise.allSettled(sessions.map((s) => s.setModel(model)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      return `重载完成：${results.length - failed}/${results.length} 个会话已切到 ${this.modelRef}（${failed} 个进行中会话切换失败）`;
+    }
+    return `重载完成。当前模型：${this.modelRef}（已应用到 ${sessions.length} 个会话）`;
+  }
+
   /** 当前模型引用 */
   getModelRef(): string {
     return this.modelRef;
@@ -203,6 +226,9 @@ export class PiSessionManager {
         ...(model ? { model } : {}),
         customTools: [this.createSendImageTool(key)],
       });
+      // SDK 的 createAgentSession 不触发 session_start（只有交互式 CLI 的 bindExtensions 会），
+      // 不调它 wiki-memory/safe-guard/task-flow 等订阅 session_start 的 hook 永远不生效
+      await created.bindExtensions({});
       session = created;
       this.sessions.set(key, session);
     }

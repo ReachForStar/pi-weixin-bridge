@@ -251,7 +251,7 @@ test/                 # 单元测试（vitest）
 - ✅ 长文本分块发送（markdown 分块，避免超出微信单条长度）
 - ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
 - ✅ context_token / typing ticket 持久化（重启恢复）
-- ✅ 斜杠命令（9 个：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
+- ✅ 斜杠命令（10 个：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/reload` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
 - ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / Linux systemd 用户服务；PM2 作为可选路径保留）
 - ✅ 跨平台（Windows / Linux / macOS），安装向导交互式选择保存路径 + 凭据权限加固（POSIX 700/600）
 - ⬜ 出站语音（需 silk 编码，未做）
@@ -274,6 +274,7 @@ test/                 # 单元测试（vitest）
 | `/skill <名称>` | 下一条消息按该 skill 处理（pi 会先读其 SKILL.md 再执行） |
 | `/mcp` | 已配置 MCP server 列表（含启动命令） |
 | `/mcp <名称>` | 下一条消息调用该 server 的工具处理 |
+| `/reload` | 重载模型配置（models.json 改动立即生效，并重新应用到现有会话） |
 | `/usage` | 当前对话用量（消息 / 工具调用 / Token / 成本 / 上下文占用） |
 | `/stop` | 停止当前进行中的任务 |
 | `/ping` | 服务存活检查 |

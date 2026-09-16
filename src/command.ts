@@ -22,9 +22,10 @@ const HELP_TEXT = [
   "4. /model — 查看当前模型；/model list 列表；/model <provider/modelId> 切换",
   "5. /skill — skill 列表；/skill <名称> 下一条消息按该 skill 处理",
   "6. /mcp — MCP server 列表；/mcp <名称> 下一条消息调用其工具",
-  "7. /usage — 当前对话用量",
-  "8. /stop — 停止进行中的任务",
-  "9. /ping — 存活检查",
+  "7. /reload — 重载模型配置（models.json 改动立即生效）",
+  "8. /usage — 当前对话用量",
+  "9. /stop — 停止进行中的任务",
+  "10. /ping — 存活检查",
   "",
   "其他消息直接发给 pi 处理。",
 ].join("\n");
@@ -68,6 +69,8 @@ export class SlashCommandHandler {
         return this.skillCommand(trimmed, ctx.key);
       case "/mcp":
         return this.mcpCommand(trimmed, ctx.key);
+      case "/reload":
+        return await this.pi.reload();
       case "/usage":
         return this.usage(ctx.key);
       case "/stop":

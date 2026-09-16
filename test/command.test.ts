@@ -15,6 +15,7 @@ function makeHandler(piOverrides: Record<string, unknown> = {}) {
     getSessionStats: () => undefined,
     interrupt: vi.fn().mockResolvedValue(false),
     setDirective: vi.fn(),
+    reload: vi.fn().mockResolvedValue("重载完成。当前模型：amax/qwen-3.8-27B（无活动会话）"),
     ...piOverrides,
   } as any;
   const handler = new SlashCommandHandler(mockPi, "test-account");
@@ -94,7 +95,7 @@ describe("SlashCommandHandler", () => {
   it("/help 列出全部命令", async () => {
     const { handler } = makeHandler();
     const reply = await handler.handle("/help", { key: "k" });
-    for (const c of ["/status", "/new", "/model", "/usage", "/stop", "/ping"]) {
+    for (const c of ["/status", "/new", "/model", "/usage", "/stop", "/ping", "/reload"]) {
       expect(reply).toContain(c);
     }
   });
@@ -157,6 +158,13 @@ describe("SlashCommandHandler", () => {
   it("/ping 返回存活", async () => {
     const { handler } = makeHandler();
     expect(await handler.handle("/ping", { key: "k" })).toContain("pong");
+  });
+
+  it("/reload 走 pi.reload()", async () => {
+    const { handler, mockPi } = makeHandler();
+    const reply = await handler.handle("/reload", { key: "k" });
+    expect(mockPi.reload).toHaveBeenCalled();
+    expect(reply).toContain("重载完成");
   });
 
   it("非斜杠命令返回 null", async () => {
