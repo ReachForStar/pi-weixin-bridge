@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.3] - 2026-09-16
+
+### Fixed
+
+- 文件/视频接收：CDN 下载增加超时（120s）与重试（3 次递增退避）——瞬断（如 undici terminated）自动重拉；4xx（签名/参数错误）不重试；下载失败日志带重试轨迹。
+
 ## [1.5.2] - 2026-09-16
 
 ### Changed

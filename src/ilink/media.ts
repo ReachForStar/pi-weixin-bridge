@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CONFIG, WORKSPACE } from "../config.js";
+import { logger } from "../logger/index.js";
 import type { IlinkClient } from "./client.js";
 import { MessageItemType, UploadMediaType, type MessageItem } from "./types.js";
 
@@ -45,10 +46,27 @@ function buildCdnUploadUrl(uploadParam: string, filekey: string): string {
   return `${CONFIG.cdnBaseUrl}/upload?encrypted_query_param=${encodeURIComponent(uploadParam)}&filekey=${encodeURIComponent(filekey)}`;
 }
 
+const CDN_FETCH_TIMEOUT_MS = 120_000; // 大文件给足时间
+const CDN_FETCH_RETRIES = 3;
+
+/** 下载 CDN 字节：超时 + 重试（terminated 等瞬时断连重拉；4xx 不重试——签名/参数错误重试无意义） */
 async function fetchCdnBytes(url: string): Promise<Buffer> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`CDN 下载失败 ${res.status} ${res.statusText}`);
-  return Buffer.from(await res.arrayBuffer());
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= CDN_FETCH_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(CDN_FETCH_TIMEOUT_MS) });
+      if (!res.ok) throw new Error(`CDN 下载失败 ${res.status} ${res.statusText}`);
+      return Buffer.from(await res.arrayBuffer());
+    } catch (err) {
+      lastErr = err;
+      if (/CDN 下载失败 4\d\d/.test(String(err))) break;
+      if (attempt < CDN_FETCH_RETRIES) {
+        logger.warn(`[media] CDN 下载第 ${attempt} 次失败（${String(err)}），${500 * attempt}ms 后重试`);
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 async function downloadAndDecrypt(encryptQueryParam: string, aesKeyBase64: string, fullUrl?: string): Promise<Buffer> {
