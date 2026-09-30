@@ -20,6 +20,8 @@ updated: 2026-10-01
 
 - [CLI 配置入口](entities/config-command.md) — 独立交互配置、模型选择、字段校验与生效边界。
 
+- [Windows macOS Linux 适配](entities/platform-support.md) — 系统工具、自启方式、旧路径兼容与三平台 CI。
+
 ## 概念 concepts
 
 ## 源总结 sources

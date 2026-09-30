@@ -27,11 +27,7 @@ describe("config 路径解析", () => {
     const { STATE_DIR, WORKSPACE, BOOTSTRAP_DIR } = await import("../src/config.js");
     expect(STATE_DIR).toBe(BOOTSTRAP_DIR);
     expect(STATE_DIR).toBe(join(home, ".pi-weixin-bridge"));
-    if (process.platform === "win32") {
-      expect(WORKSPACE).toBe("D:\\pi_weixin_project");
-    } else {
-      expect(WORKSPACE).toBe(join(home, "pi-weixin-project"));
-    }
+    expect(WORKSPACE).toBe(join(home, "pi-weixin-project"));
   });
 
   it("config.json 生效（无环境变量时）", async () => {
@@ -76,7 +72,7 @@ describe("config 路径解析", () => {
     const original = Object.getOwnPropertyDescriptor(process, "platform");
     try {
       Object.defineProperty(process, "platform", { value: "win32", configurable: true });
-      expect(defaultWorkspace()).toBe("D:\\pi_weixin_project");
+      expect(defaultWorkspace()).toBe(join(home, "pi-weixin-project"));
       Object.defineProperty(process, "platform", { value: "linux", configurable: true });
       expect(defaultWorkspace()).toBe(join(home, "pi-weixin-project"));
     } finally {

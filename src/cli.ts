@@ -8,6 +8,7 @@ import { loginWithQR } from "./ilink/login.js";
 import { loadState, saveState } from "./account.js";
 import { runInstallWizard, runModelWizard } from "./wizard.js";
 import { runConfigCommand, printConfigHelp } from "./config-command.js";
+import { windowsPowerShellPath } from "./platform.js";
 import {
   BIN_PATH,
   BRIDGE_LOG_FILE,
@@ -88,7 +89,7 @@ function printDaemonHelp(): void {
   status           查看运行状态与日志路径
   restart          重启 daemon
   logs [n]         查看桥接日志末尾 n 行（默认 50）
-  install-boot     注册开机自启（Windows 计划任务 / Linux systemd 用户服务，免管理员）
+  install-boot     注册登录自启（Windows 计划任务 / macOS LaunchAgent / Linux systemd，免管理员）
   uninstall-boot   移除开机自启
   supervise        内部命令：supervisor 进程本体（由 daemon start 拉起，勿手动运行）
 
@@ -124,9 +125,7 @@ export function createShortcuts(packageRoot: string = PKG_ROOT): void {
   if (!existsSync(script)) {
     throw new Error("缺少 create-shortcuts.ps1，快捷方式创建失败；后台状态请用 status 查看");
   }
-  const systemRoot = process.env.SystemRoot;
-  if (!systemRoot) throw new Error("缺少 SystemRoot，无法定位 Windows PowerShell");
-  const powershell = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const powershell = windowsPowerShellPath();
   // 直接传入参数数组，避免 cmd 再次解析含空格的 npm 安装路径。
   const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script], {
     cwd: packageRoot,

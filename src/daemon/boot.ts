@@ -8,16 +8,17 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_DIR, WORKSPACE, MODEL_REF } from "../config.js";
-import { BIN_PATH } from "./daemon.js";
+import { BIN_PATH, daemonStatus } from "./daemon.js";
+import { windowsPowerShellPath } from "../platform.js";
 
 const TASK_NAME = "pi-weixin-bridge";
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 function runPowershell(script: string, args: string[]): { ok: boolean; output: string } {
   const r = spawnSync(
-    "powershell",
+    windowsPowerShellPath(),
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, ...args],
-    { cwd: PKG_ROOT, encoding: "utf8", timeout: 60_000 },
+    { cwd: PKG_ROOT, encoding: "utf8", timeout: 60_000, windowsHide: true },
   );
   return {
     ok: r.status === 0,
@@ -35,7 +36,7 @@ function installBootWindows(): { ok: boolean; message: string } {
   }
   const ps1 = join(PKG_ROOT, "start-service.ps1");
   if (!existsSync(ps1)) return { ok: false, message: "npm 包缺少 start-service.ps1，请重新安装" };
-  const execute = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const execute = windowsPowerShellPath();
   const quoted = (value: string) => {
     if (/["\r\n\0]/.test(value)) throw new Error("自启路径或模型包含无效字符");
     return '"' + value + '"';
@@ -106,7 +107,7 @@ function runSystemctl(args: string[]): { ok: boolean; output: string } {
 
 function installBootLinux(): { ok: boolean; message: string } {
   // 探测 systemd 用户会话是否可用（WSL 未启用 systemd 时 daemon-reload 会失败）
-  const probe = spawnSync("systemctl", ["--user", "daemon-reload"], { encoding: "utf8" });
+  const probe = spawnSync("systemctl", ["--user", "daemon-reload"], { encoding: "utf8", timeout: 60_000 });
   if (probe.error) {
     return {
       ok: false,
@@ -117,7 +118,7 @@ function installBootLinux(): { ok: boolean; message: string } {
   if (probe.status !== 0) {
     return {
       ok: false,
-      message: `systemd 用户会话不可用（${probe.output || "daemon-reload 失败"}）。可手动运行 ` +
+      message: `systemd 用户会话不可用（${probe.stderr?.trim() || "daemon-reload 失败"}）。可手动运行 ` +
         "`pi-weixin-bridge daemon start`。",
     };
   }
@@ -142,18 +143,68 @@ function installBootLinux(): { ok: boolean; message: string } {
 }
 
 function uninstallBootLinux(): { ok: boolean; message: string } {
-  runSystemctl(["disable", TASK_NAME]); // 不 --now：只影响自启，不动正在运行的服务
+  if (!existsSync(UNIT_FILE)) return { ok: true, message: "未注册 systemd 用户服务" };
+  const disabled = runSystemctl(["disable", TASK_NAME]);
+  if (!disabled.ok) return { ok: false, message: `systemctl disable 失败: ${disabled.output}` };
   rmSync(UNIT_FILE, { force: true });
-  runSystemctl(["daemon-reload"]);
+  const reload = runSystemctl(["daemon-reload"]);
+  if (!reload.ok) return { ok: false, message: `systemctl daemon-reload 失败: ${reload.output}` };
   return { ok: true, message: `已移除 systemd 用户服务 ${TASK_NAME}` };
+}
+
+const AGENT_LABEL = "io.github.ReachForStar.pi-weixin-bridge";
+const AGENT_FILE = join(homedir(), "Library", "LaunchAgents", `${AGENT_LABEL}.plist`);
+
+export function launchAgentConfig(nodePath: string, binPath: string, stateDir: string, workspace: string): Record<string, unknown> {
+  return { Label: AGENT_LABEL, ProgramArguments: [nodePath, binPath, "daemon", "supervise"], RunAtLoad: true,
+    EnvironmentVariables: { PI_WEIXIN_STATE_DIR: stateDir, PI_WEIXIN_WORKSPACE: workspace,
+      ...(MODEL_REF ? { PI_WEIXIN_MODEL: MODEL_REF } : {}),
+      ...(process.env.PI_CODING_AGENT_DIR ? { PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR } : {}) },
+    StandardOutPath: join(stateDir, "daemon", "launch-agent.log"), StandardErrorPath: join(stateDir, "daemon", "launch-agent.log") };
+}
+
+function runLaunchctl(args: string[]): { ok: boolean; output: string } {
+  const result = spawnSync("/bin/launchctl", args, { encoding: "utf8", timeout: 60_000 });
+  return { ok: result.status === 0, output: result.error?.message ?? `${result.stdout ?? ""}${result.stderr ?? ""}`.trim() };
+}
+
+function installBootDarwin(): { ok: boolean; message: string } {
+  if (daemonStatus().running) return { ok: false, message: "macOS 注册自启前请先运行 daemon stop，避免 LaunchAgent 与已有 supervisor 冲突" };
+  if (existsSync(AGENT_FILE)) {
+    const removed = runLaunchctl(["unload", "-w", AGENT_FILE]);
+    if (!removed.ok) return { ok: false, message: `卸载已有 LaunchAgent 失败: ${removed.output}` };
+  }
+  mkdirSync(dirname(AGENT_FILE), { recursive: true });
+  mkdirSync(join(STATE_DIR, "daemon"), { recursive: true });
+  // 使用系统 plutil 转换标准 JSON，避免自行生成或解析 plist XML。
+  const converted = spawnSync("/usr/bin/plutil", ["-convert", "xml1", "-o", AGENT_FILE, "-"], {
+    input: JSON.stringify(launchAgentConfig(process.execPath, BIN_PATH, STATE_DIR, WORKSPACE)), encoding: "utf8", timeout: 30_000,
+  });
+  if (converted.error || converted.status !== 0) return { ok: false, message: `生成 LaunchAgent 失败: ${converted.error?.message ?? converted.stderr}` };
+  const loaded = runLaunchctl(["load", "-w", AGENT_FILE]);
+  return { ok: loaded.ok, message: loaded.ok ? `已注册 macOS 登录自启（${AGENT_FILE}）；请用 status 检查后台` : `注册 LaunchAgent 失败: ${loaded.output}` };
+}
+
+function uninstallBootDarwin(): { ok: boolean; message: string } {
+  if (!existsSync(AGENT_FILE)) return { ok: true, message: "未注册 macOS LaunchAgent" };
+  const unloaded = runLaunchctl(["unload", "-w", AGENT_FILE]);
+  if (!unloaded.ok) return { ok: false, message: `移除 LaunchAgent 失败: ${unloaded.output}` };
+  rmSync(AGENT_FILE);
+  return { ok: true, message: "已移除 macOS 登录自启；后台状态请用 status 查看" };
 }
 
 // ---------- 对外入口 ----------
 
 export function installBootTask(): { ok: boolean; message: string } {
-  return process.platform === "win32" ? installBootWindows() : installBootLinux();
+  if (process.platform === "win32") return installBootWindows();
+  if (process.platform === "linux") return installBootLinux();
+  if (process.platform === "darwin") return installBootDarwin();
+  return { ok: false, message: "仅支持 Windows、macOS 和 Linux 登录自启" };
 }
 
 export function uninstallBootTask(): { ok: boolean; message: string } {
-  return process.platform === "win32" ? uninstallBootWindows() : uninstallBootLinux();
+  if (process.platform === "win32") return uninstallBootWindows();
+  if (process.platform === "linux") return uninstallBootLinux();
+  if (process.platform === "darwin") return uninstallBootDarwin();
+  return { ok: false, message: "仅支持 Windows、macOS 和 Linux 登录自启" };
 }

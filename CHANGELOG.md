@@ -8,6 +8,8 @@
 
 ### Added
 
+- 完善 Windows、macOS、Linux 适配：增加 macOS LaunchAgent 自启，Windows 不再依赖 pwsh，统一新安装默认目录，三平台 CI 验证。
+
 - 增加 pi-weixin-bridge config：交互配置与 show/get/set/unset/models/model，管理路径、默认模型、访问权限、项目、文件上限和日预算。
 
 ### Fixed

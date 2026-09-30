@@ -9,7 +9,6 @@ import {
   CONFIG_FILE,
   STATE_DIR,
   WORKSPACE,
-  defaultWorkspace,
   resolveUserPath,
   saveSettings,
   MODEL_REF,
@@ -134,7 +133,7 @@ export async function runInstallWizard(
   mkdirSync(BOOTSTRAP_DIR, { recursive: true });
   const settings = {
     stateDir: stateDir === BOOTSTRAP_DIR ? undefined : stateDir,
-    workspace: workspace === defaultWorkspace() ? undefined : workspace,
+    workspace,
   };
   saveSettings(settings);
   logger.info(

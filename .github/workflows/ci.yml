@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   pull_request:
     branches: [main]
 
@@ -14,7 +14,7 @@ concurrency:
 jobs:
   # 质量检查：类型检查 + 单元测试 + 构建（Node 22；pi-coding-agent SDK 及其内置 undici 要求 Node ≥22）
   check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     permissions: {}
     outputs:
@@ -22,6 +22,7 @@ jobs:
       changed: ${{ steps.version.outputs.changed }}
     strategy:
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [22]
     steps:
       - uses: actions/checkout@v4

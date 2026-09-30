@@ -45,7 +45,7 @@ pi-weixin-bridge install
 路径选择说明：
 
 - **状态目录**：账号凭据、会话上下文、后台日志的存放位置，默认 `~/.pi-weixin-bridge`；选择后写入 `~/.pi-weixin-bridge/config.json`，后续所有进程（含 daemon 子进程）自动生效
-- **pi 工作目录**：Agent 读写文件的工作区，Windows 默认 `D:\pi_weixin_project`，Linux 默认 `~/pi-weixin-project`
+- **pi 工作目录**：Agent 读写文件的工作区，新安装默认 `~/pi-weixin-project`，已有 Windows 配置且旧目录存在时保留 `D:\pi_weixin_project`
 - 安装时会**实际探针校验两个目录可写**；POSIX 下自动收紧权限（状态目录 `700`、账号文件 `600`，凭据不可被其他用户读取）
 
 ### CLI 命令
@@ -135,6 +135,25 @@ powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-se
 
 脚本说明：`start-service.ps1` / `stop-service.ps1` 以 `Start-Process -WindowStyle Hidden` 调用 `daemon start/stop`；`create-shortcuts.ps1` 生成以 `powershell -WindowStyle Hidden` 运行上述脚本的快捷方式（`.lnk` 为本机生成，已 gitignore）。
 
+### Windows / macOS / Linux 适配
+
+三平台均使用 Node.js 22+ 和 npm 全局安装，首次运行 install 完成路径、微信登录和模型选择；后续通过 config 修改配置。新安装默认工作目录为 ~/pi-weixin-project；已有 Windows 配置且旧 D:\pi_weixin_project 存在时保留旧目录，显式路径与环境变量仍优先。
+
+- Windows：使用系统自带 Windows PowerShell 5.1，不要求安装 pwsh；支持含空格的 npm 包路径、隐藏快捷方式与每用户登录计划任务。
+- macOS：后台进程及状态统计使用系统工具；登录自启保存至 ~/Library/LaunchAgents，通过系统 plutil 转换配置，直接运行前台 supervisor，由其管理桥接子进程。注册前先停止已有后台，避免重复实例。
+- Linux：后台不依赖 systemd；登录自启需要可用的 systemd 用户会话。无 systemd 的容器或 WSL 可使用 daemon start，前台托管可用 start。
+
+macOS 登录自启：
+
+```bash
+pi-weixin-bridge daemon stop
+pi-weixin-bridge daemon install-boot
+pi-weixin-bridge status
+pi-weixin-bridge daemon uninstall-boot
+```
+
+自启依赖注册时的 Node、npm 包与配置路径；切换 Node 版本或修改路径后重新注册。三平台 CI 检查全部通过才允许 main 中的版本变化触发发布。
+
 ### Linux / WSL
 
 本项目跨平台（Windows / Linux / macOS，daemon 杀进程树自动适配平台）。Linux 下同样支持后台 daemon 与会话过期重登（headless），无需扫码即可后台运行。
@@ -184,7 +203,7 @@ pi-weixin-bridge config unset budget.dailyTokens
 | `PI_WEIXIN_MODEL` | 安装时选择 | 默认模型引用，优先于 config.json |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi models.json 与鉴权配置目录 |
 | `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | 状态目录（账号凭据、会话上下文、daemon 日志） |
-| `PI_WEIXIN_WORKSPACE` | Windows `D:\pi_weixin_project` / 其他 `~/pi-weixin-project` | pi 会话的工作目录（Agent 在此读写文件） |
+| `PI_WEIXIN_WORKSPACE` | 新安装 `~/pi-weixin-project`；保留已有 Windows 旧目录 | pi 会话的工作目录（Agent 在此读写文件） |
 
 `config.json` 示例（由 `install` / `config` 生成，可手改）：
 
@@ -251,7 +270,7 @@ test/                 # 单元测试（vitest）
 - ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
 - ✅ context_token / typing ticket 持久化（重启恢复）
 - ✅ 斜杠命令（基本命令：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/reload` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
-- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / Linux systemd 用户服务）
+- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / macOS LaunchAgent / Linux systemd 用户服务）
 - ✅ 跨平台（Windows / Linux / macOS），安装向导交互式选择保存路径 + 凭据权限加固（POSIX 700/600）
 - ⬜ 出站语音（需 silk 编码，未做）
 

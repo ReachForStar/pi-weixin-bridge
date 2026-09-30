@@ -114,9 +114,11 @@ export const BRIDGE_VERSION: string = (() => {
   }
 })();
 
-/** 默认 pi 工作目录：Windows 保留既有 D:\pi_weixin_project，其他平台落到用户主目录 */
+/** 新安装使用用户主目录；已有 Windows 配置继续使用存在的旧工作目录。 */
 export function defaultWorkspace(): string {
-  return process.platform === "win32" ? "D:\\pi_weixin_project" : join(homedir(), "pi-weixin-project");
+  const legacy = "D:\\pi_weixin_project";
+  if (process.platform === "win32" && existsSync(CONFIG_FILE) && existsSync(legacy)) return legacy;
+  return join(homedir(), "pi-weixin-project");
 }
 
 /** 路径解析：~ 展开 + 相对路径转绝对（安装向导输入用） */

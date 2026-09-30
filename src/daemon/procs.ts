@@ -1,8 +1,9 @@
 // 进程统计（pm2 list 风格）：cpu%（两次采样差值）/ 内存 / 运行时长，跨平台。
-// Windows 用 pwsh Get-Process，Linux 读 /proc，macOS 用 ps。零第三方依赖。
+// Windows 用系统 PowerShell，Linux 读 /proc，macOS 用 ps。零第三方依赖。
 import { spawnSync } from "node:child_process";
 import { cpus } from "node:os";
 import { readFileSync } from "node:fs";
+import { windowsPowerShellPath } from "../platform.js";
 
 export interface ProcStats {
   cpuPct: number;
@@ -21,19 +22,27 @@ function sampleWindows(pid: number): Sample | null {
   // 兼容 PowerShell 5.1（无 ToUnixTimeMilliseconds）：直接用 (Get-Date)-StartTime 算运行时长
   const cmd =
     `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue;` +
-    ` if ($p) { "{0}|{1}|{2}" -f $p.CPU, $p.WorkingSet64, ((Get-Date) - $p.StartTime).TotalSeconds }`;
-  const r = spawnSync("pwsh", ["-NoProfile", "-Command", cmd], { encoding: "utf8", timeout: 8000 });
+    ` if ($p) { @{cpuSec=$p.CPU;memBytes=$p.WorkingSet64;uptimeSec=((Get-Date)-$p.StartTime).TotalSeconds} | ConvertTo-Json -Compress }`;
+  const r = spawnSync(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", cmd], { encoding: "utf8", timeout: 8000, windowsHide: true });
+  if (r.error) throw r.error;
+  if (r.status !== 0) throw new Error(`读取 Windows 进程统计失败：${r.stderr}`);
   const line = (r.stdout ?? "").trim();
   if (!line) return null;
-  const [cpu, mem, up] = line.split("|");
-  const cpuSec = Number(cpu);
-  const memBytes = Number(mem);
-  const uptimeSec = Number(up);
+  const { cpuSec, memBytes, uptimeSec } = JSON.parse(line) as Sample;
   if (!Number.isFinite(cpuSec) || !Number.isFinite(memBytes) || !Number.isFinite(uptimeSec)) return null;
   return { cpuSec, memBytes, uptimeSec };
 }
 
+let clockTicks: number | undefined;
 function sampleLinux(pid: number): Sample | null {
+  if (clockTicks === undefined) {
+    const result = spawnSync("getconf", ["CLK_TCK"], { encoding: "utf8", timeout: 8000 });
+    clockTicks = Number(result.stdout?.trim());
+    if (result.error || result.status !== 0 || !Number.isFinite(clockTicks) || clockTicks <= 0) {
+      clockTicks = undefined;
+      throw new Error("无法读取 Linux CLK_TCK，无法计算进程统计");
+    }
+  }
   try {
     // stat 字段 14/15 = utime/stime（clock ticks），字段 22 = starttime（开机后 ticks）
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
@@ -42,7 +51,7 @@ function sampleLinux(pid: number): Sample | null {
     const ticks = Number(fields[11]) + Number(fields[12]); // 去掉前 2 字段后的第 12/13 位 = 原 14/15
     const starttimeTicks = Number(fields[19]); // 原字段 22
     const btime = Number(readFileSync("/proc/stat", "utf8").match(/^btime (\d+)/m)?.[1] ?? 0);
-    const clkTck = 100;
+    const clkTck = clockTicks;
     const status = readFileSync(`/proc/${pid}/status`, "utf8");
     const memBytes = Number(status.match(/VmRSS:\s+(\d+) kB/m)?.[1] ?? 0) * 1024;
     const nowSec = Date.now() / 1000;
@@ -58,7 +67,8 @@ function sampleLinux(pid: number): Sample | null {
 
 function sampleDarwin(pid: number): Sample | null {
   // ps: %cpu（进程生命周期均值） rss(kb) etime(DDDHH:MM:SS)
-  const r = spawnSync("ps", ["-o", "pcpu=,rss=,etime=,lstart=", "-p", String(pid)], { encoding: "utf8" });
+  const r = spawnSync("ps", ["-o", "pcpu=,rss=,etime=", "-p", String(pid)], { encoding: "utf8", timeout: 8000 });
+  if (r.error) throw r.error;
   const line = (r.stdout ?? "").trim();
   if (!line) return null;
   const [cpu, mem, etime] = line.split(/\s+/);
@@ -78,6 +88,7 @@ export function parseEtime(etime: string): number {
 
 /** 进程统计：两次采样（500ms 间隔）求 CPU 占比；进程不存在返回 null */
 export async function procStats(pid: number): Promise<ProcStats | null> {
+  if (!Number.isSafeInteger(pid) || pid < 1) throw new Error("进程编号必须为正整数");
   const sample =
     process.platform === "win32"
       ? sampleWindows
@@ -86,6 +97,8 @@ export async function procStats(pid: number): Promise<ProcStats | null> {
         : sampleDarwin;
   const a = sample(pid);
   if (!a) return null;
+  // macOS ps 已返回 CPU 百分比，不能将两次百分比差值当作累计 CPU 时间。
+  if (process.platform === "darwin") return { cpuPct: Math.max(0, a.cpuSec / cpus().length), memBytes: a.memBytes, uptimeSec: a.uptimeSec };
   await new Promise((r) => setTimeout(r, 500));
   const b = sample(pid);
   if (!b) return null;
