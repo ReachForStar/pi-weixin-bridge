@@ -292,7 +292,7 @@ npm test            # unit tests (vitest)
 npm run build       # build to dist/
 ```
 
-CI: GitHub Actions automatically runs typecheck + test + build on push / PR (Node 22). On a push to `main`, if the tests pass and the version isn't published yet, it auto-publishes to npm.
+CI：push / PR 自动运行类型检查、测试与构建（Node 22）；仅 main 本次推送前后 package.json 版本号变化且检查成功才发布 npm 和 Release。维护者须先确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。版本不变与 PR 不发布，已发布的 npm 版本可补建缺失的 Release。
 
 ## Troubleshooting
 

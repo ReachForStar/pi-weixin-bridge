@@ -17,5 +17,6 @@ secrets/
 .DS_Store
 .npmrc
 .qmd/
-docs/
+docs/*
+!docs/wiki/
 

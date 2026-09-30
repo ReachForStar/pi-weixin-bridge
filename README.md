@@ -294,7 +294,7 @@ npm test            # 单元测试（vitest）
 npm run build       # 构建到 dist/
 ```
 
-CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）；push 到 `main` 且测试通过、版本号未发布过时，自动发布 npm 并创建 GitHub Release。
+CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）。推送到 `main` 后比较推送前后的 `package.json` 版本号，仅版本变化且检查通过时发布 npm 并创建 GitHub Release；版本不变和 PR 均不发布。发布前由维护者确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。npm 已发布的版本跳过上传，仍可补建缺失的 Release。
 
 ## 故障排查
 

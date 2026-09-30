@@ -97,8 +97,10 @@ export class IlinkClient {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     // 合并外部 signal（停止服务时立即中断长轮询）
     const onExternalAbort = () => controller.abort();
-    signal?.addEventListener("abort", onExternalAbort, { once: true });
+    if (signal?.aborted) controller.abort();
+    else signal?.addEventListener("abort", onExternalAbort, { once: true });
     let res: Response;
+    let text: string;
     try {
       res = await fetch(url.toString(), {
         method: "POST",
@@ -106,6 +108,8 @@ export class IlinkClient {
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+      // 超时必须覆盖正文读取，避免响应头已到达但正文挂起。
+      text = await res.text();
     } catch (err) {
       // AbortError（超时/外部中断）原样抛出由调用方处理；其余归类为网络错误
       if ((err as Error)?.name === "AbortError") throw err;
@@ -114,7 +118,6 @@ export class IlinkClient {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onExternalAbort);
     }
-    const text = await res.text();
     if (!res.ok) throw httpError(`POST ${endpoint}`, res.status, text);
     return text;
   }
@@ -125,19 +128,20 @@ export class IlinkClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let res: Response;
+    let text: string;
     try {
       res = await fetch(url.toString(), {
         method: "GET",
         headers: buildCommonHeaders(),
         signal: controller.signal,
       });
+      text = await res.text();
     } catch (err) {
       if ((err as Error)?.name === "AbortError") throw err;
       throw classifyFetchError(err);
     } finally {
       clearTimeout(timer);
     }
-    const text = await res.text();
     if (!res.ok) throw httpError(`GET ${endpoint}`, res.status, text);
     return text;
   }

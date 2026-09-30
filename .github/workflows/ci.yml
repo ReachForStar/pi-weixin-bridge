@@ -17,11 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions: {}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changed: ${{ steps.version.outputs.changed }}
     strategy:
       matrix:
         node-version: [22]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -41,10 +46,17 @@ jobs:
       - name: Build
         run: npm run build
 
-  # 发布：仅在 push 到 main 且测试通过后运行；版本号未发布过才发布 npm，随后自动建 GitHub Release
+      - name: Check version change
+        id: version
+        if: github.event_name == 'push'
+        env:
+          RELEASE_BASE: ${{ github.event.before }}
+        run: node scripts/release-version.mjs
+
+  # 新版本修改和推送前须由维护者确认，CI 仅在本次推送确实改变版本号时发布。
   publish:
     needs: check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check.outputs.changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -63,8 +75,9 @@ jobs:
 
       - name: Check if version already published
         id: check
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if npm view "pi-weixin-bridge@$VERSION" version >/dev/null 2>&1; then
             echo "skip=yes" >> "$GITHUB_OUTPUT"
@@ -74,6 +87,13 @@ jobs:
             echo "版本 $VERSION 尚未发布，将发布到 npm"
           fi
 
+      - name: Prepare release notes
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          mkdir -p tmp
+          node scripts/extract-changelog.mjs "$VERSION" > tmp/release-notes.md
+
       - name: Publish to npm
         if: steps.check.outputs.skip == 'no'
         run: npm publish
@@ -81,11 +101,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
-        if: steps.check.outputs.skip == 'no'
         # 表达式经 env 传入，不直接插值进 shell（防注入）；release 幂等（已存在则跳过）
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.check.outputs.version }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          node scripts/extract-changelog.mjs "$VERSION" > release-notes.md
-          gh release view "v$VERSION" >/dev/null 2>&1 || gh release create "v$VERSION" --title "v$VERSION" --notes-file release-notes.md
+          gh release view "v$VERSION" >/dev/null 2>&1 || gh release create "v$VERSION" --target "$RELEASE_COMMIT" --title "v$VERSION" --notes-file tmp/release-notes.md

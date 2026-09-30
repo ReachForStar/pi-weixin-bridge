@@ -29,6 +29,17 @@ describe("markdown 格式化", () => {
 });
 
 describe("chunkText 分块", () => {
+  it("拒绝可能导致无法前进的长度", () => {
+    for (const length of [0, -1, 1, 2.5, NaN, Infinity]) {
+      expect(() => chunkText("", length)).toThrow(RangeError);
+    }
+  });
+  it("硬切保留表情字符并遵守长度限制", () => {
+    const text = "中文😀微信🌏消息";
+    const chunks = chunkText(text, 3);
+    expect(chunks.join("")).toBe(text);
+    expect(chunks.every((chunk) => chunk.length <= 3 && chunk.isWellFormed())).toBe(true);
+  });
   it("短文本不分块", () => {
     expect(chunkText("short", 100)).toEqual(["short"]);
   });

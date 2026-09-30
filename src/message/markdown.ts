@@ -54,6 +54,9 @@ export function quote(text: string): string {
  * 优先按换行分段，尽量在段落边界切分，避免破坏 markdown 结构。
  */
 export function chunkText(text: string, maxLen = 4000): string[] {
+  if (!Number.isSafeInteger(maxLen) || maxLen < 2) {
+    throw new RangeError("分块长度必须为至少 2 的安全整数");
+  }
   if (text.length <= maxLen) return [text];
   const chunks: string[] = [];
   const paragraphs = text.split(/\n{2,}/);
@@ -70,8 +73,14 @@ export function chunkText(text: string, maxLen = 4000): string[] {
   // 单段仍超长时硬切
   const result: string[] = [];
   for (const chunk of chunks) {
-    for (let i = 0; i < chunk.length; i += maxLen) {
-      result.push(chunk.slice(i, i + maxLen));
+    for (let i = 0; i < chunk.length;) {
+      let end = Math.min(i + maxLen, chunk.length);
+      // UTF-16 代理对必须一起发送，否则表情等字符会损坏。
+      const last = chunk.charCodeAt(end - 1);
+      const next = chunk.charCodeAt(end);
+      if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end--;
+      result.push(chunk.slice(i, end));
+      i = end;
     }
   }
   return result;

@@ -10,6 +10,7 @@ import { SlashCommandHandler } from "./command.js";
 import { PiSessionManager, type ReplyContext } from "./pi/sessions.js";
 import { CONFIG } from "./config.js";
 import { logger } from "./logger/index.js";
+import { setTimeout as delay } from "node:timers/promises";
 
 /** typing ticket 缓存时长（过期后重新 getconfig 获取） */
 const TICKET_TTL_MS = 50 * 60 * 1000;
@@ -59,7 +60,12 @@ export class Bridge {
         logger.error(
           `[bridge] getUpdates 错误（连续 ${this.consecutiveFailures} 次），${backoff / 1000}s 后重试: ${String(err)}`,
         );
-        await new Promise((r) => setTimeout(r, backoff));
+        try {
+          await delay(backoff, undefined, { signal });
+        } catch (waitError) {
+          if (!signal.aborted) throw waitError;
+          break;
+        }
       }
     }
     logger.info("[bridge] 消息循环已退出。");

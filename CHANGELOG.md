@@ -2,6 +2,19 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Changed
+
+- 发布流程仅在 main 推送前后版本号变化且检查通过时执行；发布前由维护者确认版本修改与推送，npm 已发布时可补建 Release，Release 指向本次检查的提交。
+- 将本地知识库纳入版本管理。
+
+### Fixed
+
+- 桥接轮询退避可被退出信号中断；后台重登等待不再累积退出监听器。
+- HTTP 超时覆盖响应正文读取，已中断的请求不再继续发送，正文网络错误按网络错误分类。
+- 文本分块拒绝非法长度，硬切时保持 Unicode 代理对完整。
+
 ## [1.6.1] - 2026-09-16
 
 ### Changed
