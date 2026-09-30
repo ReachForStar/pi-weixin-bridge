@@ -7,6 +7,7 @@ import { parseIncomingMessage } from "./message/parser.js";
 import { buildImageMessage, buildTextMessage } from "./message/builder.js";
 import { chunkText } from "./message/markdown.js";
 import { TaskNotifier } from "./message/task-notifier.js";
+import { DocumentConversionError, prepareInboundDocuments } from "./message/documents.js";
 import { SlashCommandHandler } from "./command.js";
 import { ChatStoppedError, PiSessionManager, type ReplyContext } from "./pi/sessions.js";
 import { CONFIG } from "./config.js";
@@ -124,7 +125,8 @@ export class Bridge {
         await notifier.finish("⏹ 本次任务已停止。");
         return;
       }
-      await notifier.finish("⚠️ 本次任务处理失败，请检查模型配置和服务日志后重试。");
+      await notifier.finish(error instanceof DocumentConversionError
+        ? error.notice : "⚠️ 本次任务处理失败，请检查模型配置和服务日志后重试。");
       throw error;
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -157,8 +159,13 @@ export class Bridge {
     notifier.start();
     // 入站媒体：图片转 base64 供 pi 视觉；文件/视频落盘并以说明注入
     const media = await downloadInboundMedia(msg.item_list);
+    const documentNotes = await prepareInboundDocuments(media.files, {
+      signal, onConverting: () => notifier.update({ stage: "converting" }),
+    });
     let promptText = text;
-    if (media.notes.length) promptText = [promptText, ...media.notes].filter(Boolean).join("\n");
+    if (media.notes.length || documentNotes.length) {
+      promptText = [promptText, ...media.notes, ...documentNotes].filter(Boolean).join("\n");
+    }
     if (!promptText.trim() && media.images.length) promptText = "请查看这张图片。";
     if (!promptText.trim()) return;
 

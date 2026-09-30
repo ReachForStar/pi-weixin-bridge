@@ -257,6 +257,10 @@ Minimal example: [examples/echo-bot.ts](examples/echo-bot.ts).
 
 任务开始确认，长任务每 30 秒报告阶段、耗时和已结束的工具调用次数，失败或停止时提示。通知不包含工具参数和原始错误，详细原因在服务日志中；通知发送失败单独记录，不中断任务。会话文件可能含用户消息、图片和工具结果，请保护状态目录。
 
+### 附件自动处理
+
+受支持 PDF、Word、PowerPoint、Excel、OpenDocument、RTF、EPUB、CSV 附件会由内置 anydoc 0.2.4 本地转为 Markdown，原件与转换文件路径交给 pi。原文件保留，转换文件位于原件旁边，Markdown 和其他格式沿用路径处理。每个文件转换最多运行 120 秒，Markdown 输出上限为 16 MiB；长时间转换显示进度。扫描 PDF 需要 OCR 时明确提示，不自动上传；Firecrawl 云端 OCR 须另行确认。转换失败保留原件并通知用户。
+
 ### Model
 
 - **Default model reference** `amax/qwen-3.8-27B` (requires that provider to be registered in `~/.pi/agent/models.json`; falls back to pi's default model with a warning if not); `/model <provider/modelId>` switches to any model registered in models.json, the choice is saved as the default (survives restarts); the `PI_WEIXIN_MODEL` env var can override the default.

@@ -32,3 +32,15 @@ npm run typecheck、npm test、npm run build 全部成功；107 项测试通过�
 ## [2026-09-30] lint | 通过对话恢复与通知验证
 
 npm run typecheck、npm test、npm run build 全部成功；115 项测试通过，1 项 POSIX 权限测试在 Windows 跳过。包含真实 SDK 跨进程恢复、新建对话、隔离、队列和通知生命周期；更新 [对话恢复与任务通知](entities/conversation-recovery.md) 与 [后续功能候选](queries/feature-candidates.md)。真实微信与远程模型端到端任务未执行。
+
+## [2026-09-30] feat | 增加入站文档转换
+
+用户指定 anydoc 并确认安装 0.2.4 固定依赖。新增结构化附件信息、文件名安全保存、文档转换及转换进度与失败提示；即时沉淀 [入站文档自动转换](entities/inbound-documents.md) 与 [anydoc 依赖](entities/anydoc.md)。扫描 PDF 不自动上传，运行验证待执行。
+
+## [2026-09-30] lint | 通过真实 anydoc 文档转换验证
+
+类型检查、构建和全部测试成功；121 项通过，1 项 POSIX 测试在 Windows 跳过。真实 PDF、Word、内容格式识别、原件保留、损坏文件、取消任务与加密附件下载后转换均通过；更新 [入站文档自动转换](entities/inbound-documents.md) 和 [anydoc 依赖](entities/anydoc.md)。真实微信账号与远程模型端到端未执行。
+
+## [2026-09-30] lint | 通过构建产物和打包检查
+
+构建后的 documents.js 调用真实 anydoc 转换 PDF 成功；npm pack --dry-run 成功且包含新增转换模块。Wiki 元数据、Markdown 和相对链接校验通过；版本仍为 1.6.1，未执行推送或发布。

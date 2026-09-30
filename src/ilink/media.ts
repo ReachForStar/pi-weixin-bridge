@@ -1,6 +1,6 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { CONFIG, WORKSPACE } from "../config.js";
 import { logger } from "../logger/index.js";
 import type { IlinkClient } from "./client.js";
@@ -98,11 +98,13 @@ export interface InboundMedia {
   images: Array<{ mimeType: string; data: string }>;
   /** 文件/视频/语音的文本说明 */
   notes: string[];
+  /** 原件路径与原始文件名，供后续按文件格式处理。 */
+  files: Array<{ name: string; path: string }>;
 }
 
 /** 解析并下载入站消息中的媒体：图片转 base64 给 pi，文件/视频落盘并返回路径说明 */
 export async function downloadInboundMedia(items?: MessageItem[]): Promise<InboundMedia> {
-  const result: InboundMedia = { images: [], notes: [] };
+  const result: InboundMedia = { images: [], notes: [], files: [] };
   if (!items?.length) return result;
   const mediaDir = join(WORKSPACE, "media", "inbound");
 
@@ -128,8 +130,12 @@ export async function downloadInboundMedia(items?: MessageItem[]): Promise<Inbou
         const buf = await downloadAndDecrypt(f.media.encrypt_query_param ?? "", f.media.aes_key, f.media.full_url);
         await mkdir(mediaDir, { recursive: true });
         const name = f.file_name || `file-${Date.now()}`;
-        const path = join(mediaDir, `${Date.now()}-${name}`);
-        await writeFile(path, buf);
+        // 微信文件名不参与目录选择，随机前缀避免并发附件互相覆盖。
+        const safeName = basename(name.replace(/\\/g, "/")).replace(/[\x00-\x1f<>:"/\\|?*]/g, "_")
+          .replace(/[. ]+$/, "").slice(0, 180) || "file";
+        const path = join(mediaDir, `${randomUUID()}-${safeName}`);
+        await writeFile(path, buf, { flag: "wx" });
+        result.files.push({ name, path });
         result.notes.push(`[收到文件 ${name}，已保存到 ${path}]`);
       } else if (item.type === MessageItemType.VIDEO) {
         const v = item.video_item;

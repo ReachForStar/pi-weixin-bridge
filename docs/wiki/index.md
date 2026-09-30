@@ -12,6 +12,8 @@ updated: 2026-09-30
 
 - [桥接运行可靠性](entities/bridge-reliability.md) — 退出等待、请求超时与文本分块边界。
 - [对话恢复与任务通知](entities/conversation-recovery.md) — 持久会话、/new、进度及失败通知。
+- [入站文档自动转换](entities/inbound-documents.md) — 附件保存、文档转换和失败通知。
+- [anydoc 依赖](entities/anydoc.md) — 固定版本、格式识别与禁止自动云端 OCR。
 
 ## 概念 concepts
 
