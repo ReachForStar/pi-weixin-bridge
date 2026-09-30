@@ -27,3 +27,4 @@ updated: 2026-09-30
 
 - [发布前可靠性检查](queries/pre-release-reliability.md) — 发布确认约束与消息处理待修复问题。
 - [后续功能候选](queries/feature-candidates.md) — 对话恢复和通知已实现，白名单待选择。
+- [微信桥接功能扩展调研](queries/feature-roadmap-research.md) — 文件回传、会话管理、资料库与自动化等十项候选及协议约束。

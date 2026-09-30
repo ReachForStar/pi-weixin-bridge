@@ -60,3 +60,7 @@ npm run typecheck、npm test、npm run build 全部成功；115 项测试通过�
 ## [2026-09-30] lint | 通过任务管理命令验证
 
 类型检查、构建通过，128 项测试通过、1 项 Windows 不适用权限测试跳过。新增测试使用真实文件读取和取消信号，通过实际 SlashCommandHandler 验证列表、编号校验、按对话隔离、精确取消与完成清理；更新 [对话恢复与任务通知](entities/conversation-recovery.md)。
+
+## [2026-09-30] query | 调研微信桥接可增加功能
+
+核对项目代码、已安装 pi SDK 和 anydoc 文档，并阅读 OpenClaw 与社区微信插件维护者资料，沉淀 [微信桥接功能扩展调研](queries/feature-roadmap-research.md)。推荐文件回传、历史会话和附件资料库，明确访问权限、任务副作用和主动投递令牌约束。仅调研，未实现候选、未安装依赖、未修改版本或发布。
