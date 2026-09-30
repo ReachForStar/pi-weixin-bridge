@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-09-30
+updated: 2026-10-01
 ---
 
 # Wiki 索引
@@ -17,6 +17,8 @@ updated: 2026-09-30
 - [后台守护进程](entities/background-daemon.md) — 后台启动、独占锁、等待扫码与真实子进程停止验证。
 - [微信功能服务与权限](entities/feature-services.md) — 十项功能、模型选择、执行权限与验证边界。
 - [供应方读取与会话模型配置](entities/model-configuration.md) — 扫码后默认模型选择、会话独立切换与 CLI 帮助。
+
+- [CLI 配置入口](entities/config-command.md) — 独立交互配置、模型选择、字段校验与生效边界。
 
 ## 概念 concepts
 

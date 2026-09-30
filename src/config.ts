@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -33,33 +34,49 @@ export interface BridgeSettings {
   budget?: { dailyTokens?: number; dailyCost?: number; timeZone?: string };
 }
 
+/** 读取与保存共用校验，避免写入后才发现权限或预算无效。 */
+export function validateSettings(data: unknown): asserts data is BridgeSettings {
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("配置必须为对象");
+  const config = data as BridgeSettings;
+  for (const field of [config.stateDir, config.workspace, config.model]) {
+    if (field !== undefined && (typeof field !== "string" || !field.trim())) throw new Error("路径和模型配置必须为非空字符串");
+  }
+  if ("access" in config) {
+    const access = config.access;
+    if (!access || !Array.isArray(access.admins) || !Array.isArray(access.allowFrom) ||
+      ![...access.admins, ...access.allowFrom].every((user) => typeof user === "string" && user.length > 0) ||
+      (access.permission !== undefined && !["read-only", "guarded", "full"].includes(access.permission))) throw new Error("访问限制配置无效");
+  }
+  if (config.projects !== undefined) {
+    if (!config.projects || typeof config.projects !== "object" || Array.isArray(config.projects)) throw new Error("projects 必须为对象");
+    for (const [name, project] of Object.entries(config.projects)) {
+      if (name === "default" || !name.trim() || !project || typeof project !== "object" ||
+        typeof project.workspace !== "string" || !project.workspace.trim() ||
+        (project.model !== undefined && (typeof project.model !== "string" || !project.model.trim())) ||
+        (project.permission !== undefined && !["read-only", "guarded", "full"].includes(project.permission)) ||
+        [project.tools, project.skills].some((list) => list !== undefined && (!Array.isArray(list) || !list.every((name) => typeof name === "string" && name.length > 0)))) throw new Error("项目配置无效");
+    }
+  }
+  if (config.maxFileBytes !== undefined && (!Number.isSafeInteger(config.maxFileBytes) || config.maxFileBytes < 1)) throw new Error("maxFileBytes 必须为正整数");
+  if (config.budget !== undefined) {
+    const budget = config.budget;
+    if (!budget || typeof budget !== "object" || Array.isArray(budget)) throw new Error("budget 必须为对象");
+    if (budget.dailyTokens !== undefined && (!Number.isSafeInteger(budget.dailyTokens) || budget.dailyTokens < 1)) throw new Error("dailyTokens 必须为正整数");
+    if (budget.dailyCost !== undefined && (!Number.isFinite(budget.dailyCost) || budget.dailyCost <= 0)) throw new Error("dailyCost 必须为正数");
+    if (budget.timeZone !== undefined) {
+      if (typeof budget.timeZone !== "string" || !budget.timeZone.trim()) throw new Error("timeZone 必须为有效时区");
+      new Intl.DateTimeFormat("zh-CN", { timeZone: budget.timeZone });
+    }
+  }
+}
+
 /** 配置损坏时拒绝启动，避免访问限制被误判为未配置。 */
 export function loadSettings(): BridgeSettings {
   if (!existsSync(CONFIG_FILE)) return {};
   try {
     const data: unknown = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("配置必须为对象");
-    const config = data as BridgeSettings;
-    for (const field of [config.stateDir, config.workspace, config.model]) {
-      if (field !== undefined && (typeof field !== "string" || !field.trim())) throw new Error("路径和模型配置必须为非空字符串");
-    }
-    if ("access" in config) {
-      const access = config.access;
-      if (!access || !Array.isArray(access.admins) || !Array.isArray(access.allowFrom) ||
-        ![...access.admins, ...access.allowFrom].every((user) => typeof user === "string" && user.length > 0) ||
-        (access.permission !== undefined && !["read-only", "guarded", "full"].includes(access.permission))) throw new Error("访问限制配置无效");
-    }
-    if (config.projects !== undefined) {
-      if (!config.projects || typeof config.projects !== "object" || Array.isArray(config.projects)) throw new Error("projects 必须为对象");
-      for (const [name, project] of Object.entries(config.projects)) {
-        if (name === "default" || !name.trim() || !project || typeof project !== "object" ||
-          typeof project.workspace !== "string" || !project.workspace.trim() ||
-          (project.model !== undefined && (typeof project.model !== "string" || !project.model.trim())) ||
-          (project.permission !== undefined && !["read-only", "guarded", "full"].includes(project.permission)) ||
-          [project.tools, project.skills].some((list) => list !== undefined && (!Array.isArray(list) || !list.every((name) => typeof name === "string" && name.length > 0)))) throw new Error("项目配置无效");
-      }
-    }
-    return config;
+    validateSettings(data);
+    return data;
   } catch (error) {
     throw new Error("config.json 无法读取，请修复配置后重试", { cause: error });
   }
@@ -80,8 +97,11 @@ export function saveSettings(patch: BridgeSettings): void {
     if (v === undefined) delete next[k as keyof BridgeSettings];
     else (next as Record<string, unknown>)[k] = v;
   }
+  validateSettings(next);
   mkdirSync(BOOTSTRAP_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2), "utf8");
+  const temporary = `${CONFIG_FILE}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, JSON.stringify(next, null, 2), { encoding: "utf8", mode: 0o600, flag: "wx" });
+  renameSync(temporary, CONFIG_FILE);
 }
 
 /** 桥接版本（读包根 package.json；dist 与 src 下均指向仓库/包根） */

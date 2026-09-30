@@ -53,6 +53,7 @@ Path selection notes:
 ```bash
 pi-weixin-bridge install     # one-line install (QR bind + background daemon + shortcuts)
 pi-weixin-bridge login       # QR login / re-bind WeChat
+pi-weixin-bridge config      # Configure paths, model, access, projects, file limits and budgets
 pi-weixin-bridge start       # run the bridge in the foreground (default)
 pi-weixin-bridge stop        # stop the background daemon
 pi-weixin-bridge status      # show background daemon status (pm2 list style table: restarts / CPU / memory / uptime)
@@ -150,7 +151,25 @@ pi-weixin-bridge install
 
 ## Configuration
 
-Resolution priority: **environment variables > `~/.pi-weixin-bridge/config.json` (written by the install wizard) > platform defaults**.
+Resolution priority: **environment variables > `~/.pi-weixin-bridge/config.json` (written by install / config) > platform defaults**.
+
+Run `pi-weixin-bridge config` to choose a setting interactively, or `config model` to select a provider and default model from pi models.json. Configuration does not log in again or start the daemon automatically, and does not replace existing per-conversation model selections.
+
+```bash
+pi-weixin-bridge config help
+pi-weixin-bridge config show
+pi-weixin-bridge config models
+pi-weixin-bridge config model 1
+pi-weixin-bridge config get model
+pi-weixin-bridge config set budget.dailyTokens 100000
+pi-weixin-bridge config set budget.timeZone Asia/Shanghai
+pi-weixin-bridge config set maxFileBytes 20971520
+pi-weixin-bridge config unset budget.dailyTokens
+```
+
+Model numbers refer to the current `config models` list; full provider/model references are also accepted. `config set <key> <value>` and `config unset <key>` support model, stateDir, workspace, access, access.admins, access.allowFrom, access.permission, budget, budget.dailyTokens, budget.dailyCost, budget.timeZone, maxFileBytes, and projects. Use JSON for arrays and objects; interactive input avoids shell quoting differences. Invalid settings leave the saved configuration unchanged. Nested changes preserve sibling fields. Clearing admins or allowFrom keeps an empty list; removing access entirely restores full permissions for every contact.
+
+Restart the daemon after saving. Stop it before changing stateDir or workspace; existing credentials, sessions and tasks are not migrated. A new state directory needs an existing account or a new login. Register startup again after changing paths. `config show` displays saved settings and active environment overrides without provider secrets. When upgrading from 1.6.1 without a saved default model, run `config model` and then `daemon start`.
 
 | Variable | Default | Description |
 |---|---|---|

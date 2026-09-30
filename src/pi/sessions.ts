@@ -72,9 +72,9 @@ export class PiSessionManager {
     this.modelRuntime = runtime ?? (await ModelRuntime.create());
     const choices = await configuredModels(this.modelRuntime);
     if (!this.modelRef) {
-      throw new Error(`尚未选择默认模型，请运行 install，或设置 PI_WEIXIN_MODEL=${choices[0].ref}`);
+      throw new Error("尚未选择默认模型，请运行 pi-weixin-bridge config model，或设置 PI_WEIXIN_MODEL 为 models.json 中的模型引用");
     }
-    if (!choices.some((model) => model.ref === this.modelRef)) throw new Error("默认模型不在 models.json 中，请重新运行 install 选择");
+    if (!choices.some((model) => model.ref === this.modelRef)) throw new Error("默认模型不在 models.json 中，请运行 pi-weixin-bridge config model 选择");
   }
 
   configure(key: string, profile: ProjectProfile): void {

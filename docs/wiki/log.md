@@ -96,3 +96,11 @@ CI 检查与发布成功，npm 官方 registry 的版本和 latest 均为 1.7.0�
 ## [2026-09-30] query | 解决 npm 全局更新目录占用
 
 停止真实旧版后台后，npm 全局安装成功并核验为 1.7.0；恢复服务需要用户选择旧配置缺失的默认模型，已停止重复启动。见 [排查记录](queries/npm-global-install-ebusy.md)。
+
+## [2026-09-30] feat | 增加独立 config 配置命令
+
+实现交互配置和 show/get/set/unset/models/model，复用 SDK 目录与配置读写；准备版本 1.7.1，验证待执行，发布前仍需确认。见 [CLI 配置入口](entities/config-command.md)。
+
+## [2026-10-01] lint | 完成 config 与 1.7.1 验证
+
+150 项测试通过、1 项平台跳过，类型检查、构建、真实 CLI/交互输入、后台路径变更限制和 npm 打包通过。仅推送开发分支，未发布 1.7.1，等待用户发布确认。见 [CLI 配置入口](entities/config-command.md)。

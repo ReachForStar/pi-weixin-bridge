@@ -53,6 +53,7 @@ pi-weixin-bridge install
 ```bash
 pi-weixin-bridge install     # 一键安装（扫码绑定 + 后台 daemon + 快捷方式）
 pi-weixin-bridge login       # 扫码登录 / 重新绑定微信
+pi-weixin-bridge config      # 配置路径、模型、访问权限、项目、文件上限和预算
 pi-weixin-bridge start       # 前台运行桥接服务（默认）
 pi-weixin-bridge stop        # 停止后台 daemon
 pi-weixin-bridge status      # 查看后台 daemon 状态（pm2 list 风格表格：重启次数 / CPU / 内存 / 运行时长）
@@ -156,7 +157,27 @@ pi-weixin-bridge install       # 选择路径、扫码和模型，随后启动�
 
 ## 配置
 
-配置解析优先级：**环境变量 > `~/.pi-weixin-bridge/config.json`（安装向导写入）> 平台默认**。
+配置解析优先级：**环境变量 > `~/.pi-weixin-bridge/config.json`（install / config 写入）> 平台默认**。
+
+运行 `pi-weixin-bridge config` 交互式选择配置项；`config model` 单独选择 models.json 中的供应方和默认模型。配置不重新扫码、不自动启动后台，不改变已有会话通过 `/model` 选择的模型。
+
+```bash
+pi-weixin-bridge config help
+pi-weixin-bridge config show
+pi-weixin-bridge config models
+pi-weixin-bridge config model 1
+pi-weixin-bridge config get model
+pi-weixin-bridge config set budget.dailyTokens 100000
+pi-weixin-bridge config set budget.timeZone Asia/Shanghai
+pi-weixin-bridge config set maxFileBytes 20971520
+pi-weixin-bridge config unset budget.dailyTokens
+```
+
+模型编号对应当次 `config models` 列表，也可传入完整供应方/模型引用。`config set <配置项> <值>` 与 `config unset <配置项>` 支持 `model`、`stateDir`、`workspace`、`access`、`access.admins`、`access.allowFrom`、`access.permission`、`budget`、`budget.dailyTokens`、`budget.dailyCost`、`budget.timeZone`、`maxFileBytes`、`projects`。数组和对象使用 JSON；建议在交互式 config 中输入 JSON，避免终端参数引号差异。
+
+配置保存前校验模型目录、权限、正数预算、时区、文件上限与项目结构，失败不改写原配置。修改嵌套项保留其他字段；`unset access.admins` 或 `unset access.allowFrom` 保留空列表，`unset access` 会恢复所有联系人完整权限，设置访问限制时必须配置管理员编号。
+
+保存后执行 `pi-weixin-bridge daemon restart`。修改状态目录或默认工作目录前必须 `daemon stop`；状态目录变更不会自动迁移旧账号、会话或任务，新目录需已有账号或重新登录，改路径后须重新注册自启。环境变量仍优先，可通过 `config show` 查看覆盖。从 1.6.1 升级后若提示未选择默认模型，运行 `config model`，再 `daemon start`。
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
@@ -165,7 +186,7 @@ pi-weixin-bridge install       # 选择路径、扫码和模型，随后启动�
 | `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | 状态目录（账号凭据、会话上下文、daemon 日志） |
 | `PI_WEIXIN_WORKSPACE` | Windows `D:\pi_weixin_project` / 其他 `~/pi-weixin-project` | pi 会话的工作目录（Agent 在此读写文件） |
 
-`config.json` 示例（由 `install` 向导生成，可手改）：
+`config.json` 示例（由 `install` / `config` 生成，可手改）：
 
 ```json
 { "stateDir": "D:\\data\\piwx", "workspace": "D:\\pi_weixin_project" }

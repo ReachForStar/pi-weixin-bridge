@@ -7,6 +7,7 @@ import { IlinkClient } from "./ilink/client.js";
 import { loginWithQR } from "./ilink/login.js";
 import { loadState, saveState } from "./account.js";
 import { runInstallWizard, runModelWizard } from "./wizard.js";
+import { runConfigCommand, printConfigHelp } from "./config-command.js";
 import {
   BIN_PATH,
   BRIDGE_LOG_FILE,
@@ -33,6 +34,7 @@ function printHelp(): void {
 命令:
   install         选择路径 → 扫码绑定 → 选择供应方和默认模型 → 启动后台 → Windows 快捷方式
   login           扫码登录 / 重新绑定微信
+  config          配置路径、默认模型、访问权限、项目和预算（见 config help）
   start           前台运行桥接服务（默认命令）
   stop            停止后台 daemon
   status          查看后台 daemon 状态
@@ -72,6 +74,7 @@ function printHelp(): void {
   npm install -g pi-weixin-bridge
   pi-weixin-bridge install
   pi-weixin-bridge login
+  pi-weixin-bridge config
   pi-weixin-bridge status
 `);
 }
@@ -335,6 +338,7 @@ export async function runCli(args: string[]): Promise<void> {
   const command = args[0] ?? "help";
   if (args.slice(1).some((argument) => argument === "--help" || argument === "-h")) {
     if (command === "daemon") printDaemonHelp();
+    else if (command === "config") printConfigHelp();
     else printHelp();
     return;
   }
@@ -344,6 +348,9 @@ export async function runCli(args: string[]): Promise<void> {
       break;
     case "login":
       await login();
+      break;
+    case "config":
+      await runConfigCommand(args.slice(1));
       break;
     case "start":
       // bin 包装器已处理 start；这里兜底（直接调 runCli 的场景）
