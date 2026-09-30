@@ -2,12 +2,13 @@ import {
   createAgentSession,
   defineTool,
   ModelRuntime,
-  SessionManager,
   getAgentDir,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MODEL_REF, saveSettings, WORKSPACE } from "../config.js";
+import { ConversationStore } from "./conversation-store.js";
+import type { TaskProgress } from "../message/task-notifier.js";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { logger } from "../logger/index.js";
@@ -22,6 +23,15 @@ export interface ChatOptions {
   /** 入站图片（base64），供 pi 视觉理解 */
   images?: Array<{ mimeType: string; data: string }>;
   replyContext?: ReplyContext;
+  onProgress?: (progress: TaskProgress) => void;
+  signal?: AbortSignal;
+}
+
+export class ChatStoppedError extends Error {
+  constructor() {
+    super("任务已停止");
+    this.name = "ChatStoppedError";
+  }
 }
 
 /**
@@ -29,6 +39,7 @@ export interface ChatOptions {
  * 并对同一会话的 prompt 串行化，避免并发调用同一 session 冲突。
  */
 export class PiSessionManager {
+  private readonly conversations = new ConversationStore();
   private sessions = new Map<string, AgentSession>();
   private locks = new Map<string, Promise<void>>();
   private replyContexts = new Map<string, ReplyContext>();
@@ -221,7 +232,7 @@ export class PiSessionManager {
       }
       const { session: created } = await createAgentSession({
         cwd: WORKSPACE,
-        sessionManager: SessionManager.inMemory(WORKSPACE),
+        sessionManager: this.conversations.open(key),
         modelRuntime: this.modelRuntime,
         ...(model ? { model } : {}),
         customTools: [this.createSendImageTool(key)],
@@ -237,47 +248,82 @@ export class PiSessionManager {
 
   /** 对外入口：按 key 串行执行对话 */
   async chat(key: string, text: string, options: ChatOptions = {}): Promise<string> {
-    if (options.replyContext) this.replyContexts.set(key, options.replyContext);
     // 消费一次性指令（/skill、/mcp）：拼到本条消息前，仅生效一次
     const directive = this.consumeDirective(key);
     const promptText = directive ? `${directive}\n\n${text}` : text;
-    const prev = this.locks.get(key) ?? Promise.resolve();
-    const task: Promise<string> = prev.then(() => this.doChat(key, promptText, options.images));
-    // 单个失败不阻断后续排队（转为 Promise<void> 存入锁链）
-    this.locks.set(key, task.then(() => {}, () => {}));
+    if (this.locks.has(key)) options.onProgress?.({ stage: "queued" });
+    return this.enqueue(key, async () => {
+      if (options.replyContext) this.replyContexts.set(key, options.replyContext);
+      else this.replyContexts.delete(key);
+      try {
+        return await this.doChat(key, promptText, options);
+      } finally {
+        this.replyContexts.delete(key);
+      }
+    });
+  }
+
+  private enqueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(key) ?? Promise.resolve();
+    const task = previous.then(operation);
+    // 失败释放当前任务，后续消息仍按顺序执行。
+    const lock = task.then(() => {}, () => {});
+    this.locks.set(key, lock);
+    void lock.then(() => {
+      if (this.locks.get(key) === lock) this.locks.delete(key);
+    });
     return task;
   }
 
   private async doChat(
     key: string,
     text: string,
-    images?: Array<{ mimeType: string; data: string }>,
+    options: ChatOptions,
   ): Promise<string> {
+    if (options.signal?.aborted) throw new ChatStoppedError();
+    options.onProgress?.({ stage: "preparing" });
     const session = await this.getOrCreate(key);
+    if (options.signal?.aborted) throw new ChatStoppedError();
     let current = "";
     let final = "";
+    let terminal: "error" | "aborted" | undefined;
+    let errorMessage: string | undefined;
     const unsubscribe = session.subscribe((event) => {
-      const e = event as {
-        type: string;
-        message?: { role: string };
-        assistantMessageEvent?: { type: string; delta?: string };
-      };
       // 每条新 assistant 消息重置当前缓冲，仅保留最后一条非空文本作为回复
-      if (e.type === "message_start" && e.message?.role === "assistant") {
+      if (event.type === "message_start" && event.message.role === "assistant") {
         current = "";
-      } else if (e.type === "message_update" && e.assistantMessageEvent?.type === "text_delta") {
-        current += e.assistantMessageEvent.delta ?? "";
-      } else if (e.type === "message_end" && e.message?.role === "assistant") {
+        options.onProgress?.({ stage: "running" });
+      } else if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+        current += event.assistantMessageEvent.delta;
+      } else if (event.type === "message_end" && event.message.role === "assistant") {
+        terminal = event.message.stopReason === "error" || event.message.stopReason === "aborted"
+          ? event.message.stopReason : undefined;
+        errorMessage = event.message.errorMessage;
         if (current.trim()) final = current;
+      } else if (event.type === "tool_execution_start") {
+        options.onProgress?.({ stage: "tool", toolName: event.toolName });
+      } else if (event.type === "tool_execution_end") {
+        options.onProgress?.({ stage: "tool-completed", failed: event.isError });
+      } else if (event.type === "auto_retry_start") {
+        options.onProgress?.({ stage: "retrying" });
       }
     });
     this.busy.add(key);
+    const onAbort = () => {
+      void session.abort().catch((error) => logger.warn(`[pi] 退出时中断任务失败: ${String(error)}`));
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      const promptImages = images?.length
-        ? images.map((img) => ({ type: "image" as const, mimeType: img.mimeType, data: img.data }))
+      if (options.signal?.aborted) throw new ChatStoppedError();
+      const promptImages = options.images?.length
+        ? options.images.map((img) => ({ type: "image" as const, mimeType: img.mimeType, data: img.data }))
         : undefined;
       await session.prompt(text, promptImages ? { images: promptImages } : undefined);
+      if (options.signal?.aborted) throw new ChatStoppedError();
+      if (terminal === "aborted") throw new ChatStoppedError();
+      if (terminal === "error") throw new Error(errorMessage || "模型处理失败");
     } finally {
+      options.signal?.removeEventListener("abort", onAbort);
       this.busy.delete(key);
       unsubscribe();
     }
@@ -297,18 +343,15 @@ export class PiSessionManager {
 
   /** 重置指定会话（dispose 并移除，下次 chat 时新建）——用于 /new 命令 */
   async resetSession(key: string): Promise<void> {
-    // 等待该会话的串行锁完成，避免重置与正在进行的对话冲突
-    const prev = this.locks.get(key);
-    if (prev) await prev.catch(() => {});
-    const session = this.sessions.get(key);
-    if (session) {
-      try {
+    await this.enqueue(key, async () => {
+      this.conversations.reset(key);
+      const session = this.sessions.get(key);
+      if (session) {
         session.dispose();
-      } catch {
-        // 忽略释放异常
       }
       this.sessions.delete(key);
-    }
-    this.replyContexts.delete(key);
+      this.replyContexts.delete(key);
+      this.pendingDirectives.delete(key);
+    });
   }
 }

@@ -251,6 +251,12 @@ Minimal example: [examples/echo-bot.ts](examples/echo-bot.ts).
 - ✅ Cross-platform (Windows / Linux / macOS), install wizard with interactive path selection + credentials permission hardening (POSIX 700/600)
 - ⬜ Outbound voice (needs silk encoding, not done)
 
+### 对话恢复与任务通知
+
+对话保存在状态目录的 sessions/ 下，按账号、工作目录和微信对话隔离；重启后收到下一条普通消息时恢复。/new 持久切换到新对话，旧记录保留。不会自动重做未完成任务，也无法恢复升级前仅存于内存的历史。
+
+任务开始确认，长任务每 30 秒报告阶段、耗时和已结束的工具调用次数，失败或停止时提示。通知不包含工具参数和原始错误，详细原因在服务日志中；通知发送失败单独记录，不中断任务。会话文件可能含用户消息、图片和工具结果，请保护状态目录。
+
 ### Model
 
 - **Default model reference** `amax/qwen-3.8-27B` (requires that provider to be registered in `~/.pi/agent/models.json`; falls back to pi's default model with a warning if not); `/model <provider/modelId>` switches to any model registered in models.json, the choice is saved as the default (survives restarts); the `PI_WEIXIN_MODEL` env var can override the default.

@@ -24,3 +24,11 @@ npm run typecheck、npm test、npm run build 全部成功；107 项测试通过�
 ## [2026-09-30] lint | 通过发布配置与知识库校验
 
 使用现有依赖中的 YAML 与 Markdown 库解析 CI 配置和 wiki，全部元数据与相对链接有效；用真实 Git 历史验证版本不变、版本变化、新建分支与 Actions 输出文件；CLI help 可正常启动。新增 [后续功能候选](queries/feature-candidates.md)，本次未实施候选功能。
+
+## [2026-09-30] feat | 增加对话恢复和任务通知
+
+用户选择两项功能后，复用 SDK 会话文件实现恢复与 /new 持久切换，增加任务进度、失败和停止通知。完成队列与图片回复上下文隔离，记录于 [对话恢复与任务通知](entities/conversation-recovery.md)，验证待执行。
+
+## [2026-09-30] lint | 通过对话恢复与通知验证
+
+npm run typecheck、npm test、npm run build 全部成功；115 项测试通过，1 项 POSIX 权限测试在 Windows 跳过。包含真实 SDK 跨进程恢复、新建对话、隔离、队列和通知生命周期；更新 [对话恢复与任务通知](entities/conversation-recovery.md) 与 [后续功能候选](queries/feature-candidates.md)。真实微信与远程模型端到端任务未执行。

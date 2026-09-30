@@ -6,8 +6,9 @@ import { ContextStore } from "./ilink/context-store.js";
 import { parseIncomingMessage } from "./message/parser.js";
 import { buildImageMessage, buildTextMessage } from "./message/builder.js";
 import { chunkText } from "./message/markdown.js";
+import { TaskNotifier } from "./message/task-notifier.js";
 import { SlashCommandHandler } from "./command.js";
-import { PiSessionManager, type ReplyContext } from "./pi/sessions.js";
+import { ChatStoppedError, PiSessionManager, type ReplyContext } from "./pi/sessions.js";
 import { CONFIG } from "./config.js";
 import { logger } from "./logger/index.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -24,7 +25,7 @@ export class Bridge {
     private client: IlinkClient,
     private pi: PiSessionManager,
     private contextStore: ContextStore,
-    accountId: string,
+    private readonly accountId: string,
   ) {
     this.slash = new SlashCommandHandler(pi, accountId);
   }
@@ -49,7 +50,7 @@ export class Bridge {
 
         for (const msg of resp.msgs ?? []) {
           // 逐条异步处理，单条失败不影响循环
-          this.handleMessage(msg).catch((err) => logger.error(`[bridge] 消息处理失败: ${String(err)}`));
+          this.handleMessage(msg, signal).catch((err) => logger.error(`[bridge] 消息处理失败: ${String(err)}`));
         }
       } catch (err) {
         if (signal.aborted) break;
@@ -97,31 +98,66 @@ export class Bridge {
     }
   }
 
-  private async handleMessage(msg: WeixinMessage): Promise<void> {
+  private async handleMessage(msg: WeixinMessage, signal: AbortSignal): Promise<void> {
     // 仅处理入站用户消息（跳过机器人自身消息，防止循环）
     if (msg.message_type !== MessageType.USER) return;
 
     const incoming = parseIncomingMessage(msg);
     const from = incoming.fromUserId;
-    const key = incoming.sessionId || from;
+    const key = JSON.stringify([this.accountId, incoming.sessionId || from]);
     const contextToken = incoming.contextToken;
 
+    const sendText = async (text: string) => {
+      for (const chunk of chunkText(text)) {
+        await this.client.sendMessage(buildTextMessage(chunk, { to: from, contextToken }));
+      }
+    };
+    const notifier = new TaskNotifier(sendText);
+    const onAbort = () => { void notifier.finish(); };
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      signal.throwIfAborted();
+      await this.processMessage(msg, incoming.text, from, key, contextToken, notifier, sendText, signal);
+    } catch (error) {
+      if (signal.aborted) return;
+      if (error instanceof ChatStoppedError) {
+        await notifier.finish("⏹ 本次任务已停止。");
+        return;
+      }
+      await notifier.finish("⚠️ 本次任务处理失败，请检查模型配置和服务日志后重试。");
+      throw error;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      await notifier.finish();
+    }
+  }
+
+  private async processMessage(
+    msg: WeixinMessage,
+    text: string,
+    from: string,
+    key: string,
+    contextToken: string | undefined,
+    notifier: TaskNotifier,
+    sendText: (text: string) => Promise<void>,
+    signal: AbortSignal,
+  ): Promise<void> {
     // 持久化 context_token（用于回复与主动推送，重启可恢复）
     if (contextToken) this.contextStore.setContextToken(from, contextToken);
 
     // 斜杠命令优先处理（不经过 pi）
-    const slashReply = await this.slash.handle(incoming.text, { key });
+    const slashReply = await this.slash.handle(text, { key });
     if (slashReply !== null) {
-      logger.info(`[cmd] ${from}: ${incoming.text}`);
-      for (const chunk of chunkText(slashReply)) {
-        await this.client.sendMessage(buildTextMessage(chunk, { to: from, contextToken }));
-      }
+      logger.info(`[cmd] ${from}: ${text}`);
+      await sendText(slashReply);
       return;
     }
 
+    if (!text.trim() && !msg.item_list?.length) return;
+    notifier.start();
     // 入站媒体：图片转 base64 供 pi 视觉；文件/视频落盘并以说明注入
     const media = await downloadInboundMedia(msg.item_list);
-    let promptText = incoming.text;
+    let promptText = text;
     if (media.notes.length) promptText = [promptText, ...media.notes].filter(Boolean).join("\n");
     if (!promptText.trim() && media.images.length) promptText = "请查看这张图片。";
     if (!promptText.trim()) return;
@@ -143,20 +179,22 @@ export class Bridge {
 
     let reply = "";
     try {
-      reply = await this.pi.chat(key, promptText, { images: media.images, replyContext });
+      reply = await this.pi.chat(key, promptText, {
+        images: media.images, replyContext, signal, onProgress: (progress) => notifier.update(progress),
+      });
     } finally {
       // 取消「正在输入」
       await this.sendTypingSafe(from, contextToken, TypingStatus.CANCEL);
     }
 
+    await notifier.stopProgress();
     if (!reply) {
       logger.info("[out]（空回复，跳过发送）");
+      await sendText("✅ 本次任务已处理完成，没有文本回复。");
       return;
     }
     logger.info(`[out] → ${from}: ${reply.length > 80 ? `${reply.slice(0, 80)}…` : reply}`);
     // 长文本分块发送，避免超出微信单条消息长度限制
-    for (const chunk of chunkText(reply)) {
-      await this.client.sendMessage(buildTextMessage(chunk, { to: from, contextToken }));
-    }
+    await sendText(reply);
   }
 }
