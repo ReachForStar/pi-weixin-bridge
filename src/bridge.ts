@@ -118,7 +118,7 @@ export class Bridge {
     const notifier = new TaskNotifier(sendText);
     const command = incoming.text.trim().split(/\s+/)[0].toLowerCase();
     // 停止与状态查询必须绕过任务队列，否则无法中断正在等待的附件请求。
-    const immediate = ["/stop", "/ping", "/help", "/status", "/usage"].includes(command);
+    const immediate = ["/stop", "/cancel", "/tasks", "/ping", "/help", "/status", "/usage"].includes(command);
     if (!immediate && (incoming.text.trim() || msg.item_list?.length)) {
       notifier.start();
       notifier.update({ stage: "queued" });
@@ -127,7 +127,8 @@ export class Bridge {
       msg, incoming.text, from, key, contextToken, notifier, sendText, taskSignal, signal,
     );
     if (immediate) await operation(signal);
-    else await this.tasks.run(key, signal, operation);
+    else await this.tasks.run(key, signal, operation,
+      incoming.text.trim().replace(/\s+/g, " ").slice(0, 60) || "附件任务");
   }
 
   private async executeMessage(
@@ -176,7 +177,10 @@ export class Bridge {
     if (contextToken) this.contextStore.setContextToken(from, contextToken);
 
     // 斜杠命令优先处理（不经过 pi）
-    const slashReply = await this.slash.handle(text, { key, stop: async () => {
+    const slashReply = await this.slash.handle(text, { key,
+      listTasks: () => this.tasks.list(key),
+      cancelTask: (id) => this.tasks.stop(key, id),
+      stop: async () => {
       const stopped = this.tasks.stop(key);
       const interrupted = await this.pi.interrupt(key);
       return stopped || interrupted;

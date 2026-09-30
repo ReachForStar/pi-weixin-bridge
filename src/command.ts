@@ -5,11 +5,14 @@
 import type { PiSessionManager } from "./pi/sessions.js";
 import { BRIDGE_VERSION, WORKSPACE } from "./config.js";
 import { listSkills, listMcpServers, skillDirective, mcpDirective } from "./catalog.js";
+import type { TaskInfo } from "./message/task-queue.js";
 
 export interface SlashContext {
   /** 会话 key（session_id 或 from_user_id） */
   key: string;
   stop?: () => Promise<boolean>;
+  listTasks?: () => TaskInfo[];
+  cancelTask?: (id: string) => boolean;
 }
 
 const LIST_MAX = 100;
@@ -27,6 +30,8 @@ const HELP_TEXT = [
   "8. /usage — 当前对话用量",
   "9. /stop — 停止当前对话的任务（含附件处理和等待中的消息）",
   "10. /ping — 存活检查",
+  "11. /tasks — 查看当前对话正在处理和等待中的任务",
+  "12. /cancel <任务编号> — 取消指定任务，其余任务继续",
   "",
   "其他消息直接发给 pi 处理。",
 ].join("\n");
@@ -79,6 +84,15 @@ export class SlashCommandHandler {
           return await this.stop(ctx);
         case "/ping":
           return "🏓 pong";
+        case "/tasks":
+          return this.tasks(ctx);
+        case "/cancel": {
+          const id = trimmed.slice("/cancel".length).trim();
+          if (!id) return "用法：/cancel <任务编号>，用 /tasks 查看编号。";
+          if (!ctx.cancelTask) return "当前没有可取消的任务。";
+          return ctx.cancelTask(id) ? `⏹ 已请求取消任务 ${id}，其余任务继续。`
+            : "当前对话未找到该任务，可能已经结束；用 /tasks 查看。";
+        }
         default:
           return null; // 未知命令交给 pi
       }
@@ -170,6 +184,20 @@ export class SlashCommandHandler {
     if (stats.tokens.total === 0 && stats.assistantMessages > 0) {
       lines.push("- 注意：当前模型服务未返回用量数据，Token/成本无法统计（上下文为本地估算）");
     }
+    return lines.join("\n");
+  }
+
+  private tasks(ctx: SlashContext): string {
+    const tasks = ctx.listTasks?.() ?? [];
+    if (!tasks.length) return "当前对话没有正在处理或等待中的任务。";
+    const labels = { queued: "等待中", running: "处理中", stopping: "停止中" };
+    const lines = [`📋 当前对话任务（${tasks.length}）`, ""];
+    for (const task of tasks.slice(0, 20)) {
+      const seconds = Math.floor((Date.now() - (task.startedAt ?? task.createdAt)) / 1000);
+      lines.push(`- ${task.id.slice(0, 8)} · ${labels[task.state]} · ${seconds} 秒 · ${task.description}`);
+    }
+    if (tasks.length > 20) lines.push(`- 另有 ${tasks.length - 20} 条任务`);
+    lines.push("", "使用 /cancel <任务编号> 取消一条，/stop 停止全部。");
     return lines.join("\n");
   }
 
