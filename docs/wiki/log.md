@@ -88,3 +88,7 @@ README 与英文说明统一 npm 全局安装、npm 更新和卸载，补充模�
 ## [2026-09-30] release | 完成 1.7.0 发布前检查
 
 类型检查、构建、141 项测试通过，1 项平台跳过；打包、CLI、CI 与 wiki 校验通过。准备推送 main 触发发布。
+
+## [2026-09-30] release | 发布 1.7.0
+
+CI 检查与发布成功，npm 官方 registry 的版本和 latest 均为 1.7.0，GitHub 正式 Release 标签指向通过检查的 968816a 提交。发布记录见 [1.7.0 发布记录](queries/release-1-7-0.md)。

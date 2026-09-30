@@ -4,7 +4,7 @@ type: query
 tags: [发布, npm, GitHub]
 created: 2026-09-30
 updated: 2026-09-30
-status: draft
+status: active
 ---
 
 ## 问题
@@ -17,7 +17,7 @@ npm 和 GitHub 最新版本均为 1.6.1；远程 main 是当前提交的祖先�
 
 ## 解法
 
-新增功能使用次版本号 1.7.0，同步 package.json、锁文件和 CHANGELOG。完成本地检查后推送 main，由版本变化触发 CI 发布。本地类型检查、构建、24 个测试文件均通过（141 项通过、1 项 Windows 平台跳过）；真实 CLI 帮助、npm 打包文件、CI 版本条件、wiki 元数据和相对链接校验通过。发布状态待核验。
+新增功能使用次版本号 1.7.0，同步 package.json、锁文件和 CHANGELOG。完成本地检查后推送 main，由版本变化触发 CI 发布。本地类型检查、构建、24 个测试文件均通过（141 项通过、1 项 Windows 平台跳过）；真实 CLI 帮助、npm 打包文件、CI 版本条件、wiki 元数据和相对链接校验通过。GitHub Actions 检查和发布均成功：[运行记录](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36731597896)。[GitHub Release v1.7.0](https://github.com/ReachForStar/pi-weixin-bridge/releases/tag/v1.7.0) 为正式发布，标签指向 968816a0d21281c01937fbabb86f61f1346da998。npm 接受上传后提示需要处理数分钟；等待处理结束后，官方 registry 已确认 version 和 latest 均为 1.7.0。
 
 ## 涉及模块
 
