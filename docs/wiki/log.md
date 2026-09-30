@@ -104,3 +104,13 @@ CI 检查与发布成功，npm 官方 registry 的版本和 latest 均为 1.7.0�
 ## [2026-10-01] lint | 完成 config 与 1.7.1 验证
 
 150 项测试通过、1 项平台跳过，类型检查、构建、真实 CLI/交互输入、后台路径变更限制和 npm 打包通过。仅推送开发分支，未发布 1.7.1，等待用户发布确认。见 [CLI 配置入口](entities/config-command.md)。
+
+## [2026-10-01] fix | 修复快捷方式创建参数与失败处理
+
+Windows PowerShell 直接接收参数数组，避免 Author Software 路径截断；检查脚本退出码与 COM 错误。新增真实快捷方式回归验证，结果待核验；遵守用户暂不发布 1.7.1 的决定。见 [排查记录](queries/windows-shortcut-spaces.md)。
+
+Windows PowerShell 直接接收参数数组，避免 Author Software 路径截断；检查脚本退出码与 COM 错误。新增真实快捷方式回归验证，结果待核验；遵守用户暂不发布 1.7.1 的决定。见 [排查记录](queries/windows-shortcut-spaces.md)。
+
+## [2026-10-01] lint | 验证快捷方式路径空格修复
+
+真实 Windows PowerShell 与 COM 快捷方式验证通过，153 项测试通过、1 项平台跳过，类型检查、构建、打包与 wiki 校验通过。修复保留于未发布 1.7.1。

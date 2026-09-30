@@ -115,21 +115,26 @@ async function login(): Promise<boolean> {
 }
 
 /** 运行 create-shortcuts.ps1 生成隐藏窗口快捷方式（仅 Windows） */
-function createShortcuts(): void {
+export function createShortcuts(packageRoot: string = PKG_ROOT): void {
   if (process.platform !== "win32") {
     console.log("（非 Windows 平台，跳过快捷方式；自启用 daemon install-boot）");
     return;
   }
-  const script = join(PKG_ROOT, "create-shortcuts.ps1");
+  const script = join(packageRoot, "create-shortcuts.ps1");
   if (!existsSync(script)) {
-    console.log("（未找到 create-shortcuts.ps1，跳过快捷方式）");
-    return;
+    throw new Error("缺少 create-shortcuts.ps1，快捷方式创建失败；后台状态请用 status 查看");
   }
-  spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], {
-    cwd: PKG_ROOT,
+  const systemRoot = process.env.SystemRoot;
+  if (!systemRoot) throw new Error("缺少 SystemRoot，无法定位 Windows PowerShell");
+  const powershell = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  // 直接传入参数数组，避免 cmd 再次解析含空格的 npm 安装路径。
+  const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script], {
+    cwd: packageRoot,
     stdio: "inherit",
-    shell: true,
+    windowsHide: true,
+    timeout: 30_000,
   });
+  if (result.error || result.status !== 0) throw new Error("快捷方式创建失败；后台可能已运行，请用 status 查看", { cause: result.error ?? new Error(`PowerShell 退出码：${result.status}`) });
 }
 
 async function runDaemon(args: string[]): Promise<void> {

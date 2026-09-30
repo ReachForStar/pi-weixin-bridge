@@ -3,7 +3,7 @@ title: 后台守护进程
 type: entity
 tags: [后台, 进程, 可靠性]
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-01
 status: active
 ---
 
@@ -36,3 +36,7 @@ Node 标准库和 Windows taskkill 或 POSIX 信号。测试只操作临时目�
 Windows 自启使用绝对 PowerShell 与 Node 路径，保存路径及 pi 配置目录参数；隐藏启动器等待并传递退出码。PowerShell AST 语法检查通过。Linux unit 内容测试覆盖 Type=forking、PIDFile、引号与 ExecStop，实际 Linux/systemd 注册未执行。
 
 损坏 PID 锁拒绝启动，不自行删除未知锁；残留 .reclaim 回收锁需要核对所属进程后由维护者处理。PID 标识并非操作系统持久进程身份，用户不应手动写入其他进程 PID。日志轮转在子进程重新启动前检查，长期不中断运行时需要维护日志容量。
+
+Windows 安装快捷方式由绝对 PowerShell 路径直接接收参数数组，禁止 shell 再次解析脚本路径；创建失败终止安装成功提示。根因与验证见[快捷方式路径空格](../queries/windows-shortcut-spaces.md)。
+
+Windows 安装快捷方式由绝对 PowerShell 路径直接接收参数数组，禁止 shell 再次解析脚本路径；创建失败终止安装成功提示。根因与验证见[快捷方式路径空格](../queries/windows-shortcut-spaces.md)。

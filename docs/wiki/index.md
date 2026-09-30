@@ -38,3 +38,7 @@ updated: 2026-10-01
 - [1.7.0 发布记录](queries/release-1-7-0.md) — 发布授权、版本检查与 npm/GitHub 实际结果。
 
 - [Windows 全局更新 EBUSY](queries/npm-global-install-ebusy.md) — 旧后台占用 npm 包目录与升级后模型配置要求。
+
+- [Windows 快捷方式脚本路径空格](queries/windows-shortcut-spaces.md) — npm 包路径空格、PowerShell 参数传递与失败退出。
+
+- [Windows 快捷方式脚本路径空格](queries/windows-shortcut-spaces.md) — npm 包路径空格、PowerShell 参数传递与失败退出。
