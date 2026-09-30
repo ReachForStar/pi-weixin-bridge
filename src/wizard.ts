@@ -11,9 +11,12 @@ import {
   WORKSPACE,
   defaultWorkspace,
   resolveUserPath,
+  saveSettings,
+  MODEL_REF,
 } from "./config.js";
 import { hardenStateDir } from "./account.js";
 import { logger } from "./logger/index.js";
+import { configuredModels } from "./models.js";
 
 /**
  * 行读取器：缓存先于 question 到达的行（快速管道/pty 输入不会丢答案），
@@ -41,9 +44,9 @@ class LineReader {
 
   question(prompt: string): Promise<string> {
     process.stdout.write(prompt);
-    if (this.closed) return Promise.resolve("");
     const line = this.buffer.shift();
     if (line !== undefined) return Promise.resolve(line);
+    if (this.closed) return Promise.resolve("");
     return new Promise((resolve) => this.waiters.push(resolve));
   }
 
@@ -133,10 +136,37 @@ export async function runInstallWizard(
     stateDir: stateDir === BOOTSTRAP_DIR ? undefined : stateDir,
     workspace: workspace === defaultWorkspace() ? undefined : workspace,
   };
-  writeFileSync(CONFIG_FILE, JSON.stringify(settings, null, 2), "utf8");
+  saveSettings(settings);
   logger.info(
     `[install] 路径已配置：状态目录 ${stateDir}，工作目录 ${workspace}（${existsSync(CONFIG_FILE) ? CONFIG_FILE : "默认"}）`,
   );
 
   return { stateDir, workspace, fromDefaults: stateDir === STATE_DIR && workspace === WORKSPACE };
+}
+
+export async function runModelWizard(opts: { assumeYes?: boolean; interactive?: boolean; input?: Readable } = {}): Promise<string> {
+  const models = await configuredModels();
+  const current = models.find((model) => model.ref === MODEL_REF);
+  const interactive = (opts.interactive ?? process.stdout.isTTY === true) && !opts.assumeYes;
+  if (!interactive) {
+    if (!current) throw new Error("非交互安装需要用 PI_WEIXIN_MODEL 指定 models.json 中的模型，或先运行交互式 install");
+    saveSettings({ model: current.ref });
+    return current.ref;
+  }
+  const providers = [...new Set(models.map((model) => model.provider))];
+  const reader = new LineReader(opts.input ?? process.stdin);
+  try {
+    providers.forEach((provider, index) => console.log(`${index + 1}. ${provider}`));
+    const choice = (await reader.question("选择供应方编号：")).trim();
+    if (!/^\d+$/.test(choice) || !providers[Number(choice) - 1]) throw new Error("供应方编号无效，安装中止");
+    const available = models.filter((model) => model.provider === providers[Number(choice) - 1]);
+    available.forEach((model, index) => console.log(`${index + 1}. ${model.id} — ${model.name}`));
+    const selected = (await reader.question("选择默认模型编号：")).trim();
+    const model = /^\d+$/.test(selected) ? available[Number(selected) - 1] : undefined;
+    if (!model) throw new Error("模型编号无效，安装中止");
+    saveSettings({ model: model.ref });
+    console.log(`默认模型已保存：${model.ref}`);
+    if (process.env.PI_WEIXIN_MODEL && process.env.PI_WEIXIN_MODEL !== model.ref) console.warn("PI_WEIXIN_MODEL 已设置，运行时会优先使用该环境变量；要使用本次选择请先移除环境变量覆盖。");
+    return model.ref;
+  } finally { reader.close(); }
 }

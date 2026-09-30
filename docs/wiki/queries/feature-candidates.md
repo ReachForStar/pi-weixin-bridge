@@ -4,8 +4,10 @@ type: query
 tags: [功能, 会话, 安全]
 created: 2026-09-30
 updated: 2026-09-30
-status: draft
+status: superseded
 ---
+
+本页候选已实现，当前能力与边界见 [微信功能服务与权限](../entities/feature-services.md)。以下为早期候选记录。
 
 ## 问题
 

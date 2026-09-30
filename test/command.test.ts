@@ -8,8 +8,9 @@ function makeHandler(piOverrides: Record<string, unknown> = {}) {
   const mockPi = {
     resetSession: vi.fn().mockResolvedValue(undefined),
     getModelRef: () => "amax/qwen-3.8-27B",
+    getSessionModelRef: () => "amax/qwen-3.8-27B",
     listModels: vi.fn().mockResolvedValue("📋 可用模型"),
-    switchModel: vi.fn().mockResolvedValue("已切换"),
+    switchSessionModel: vi.fn().mockResolvedValue("已切换"),
     sessionCount: () => 2,
     busyCount: () => 1,
     getSessionStats: () => undefined,
@@ -123,12 +124,12 @@ describe("SlashCommandHandler", () => {
     expect(reply).toBe("当前模型：amax/qwen-3.8-27B");
   });
 
-  it("/model list 走 listModels；/model x/y 走 switchModel", async () => {
+  it("/model list 走 listModels；/model x/y 走 switchSessionModel", async () => {
     const { handler, mockPi } = makeHandler();
     await handler.handle("/model list", { key: "k" });
     expect(mockPi.listModels).toHaveBeenCalled();
     await handler.handle("/model foo/bar", { key: "k" });
-    expect(mockPi.switchModel).toHaveBeenCalledWith("foo/bar");
+    expect(mockPi.switchSessionModel).toHaveBeenCalledWith("k", "foo/bar");
   });
 
   it("/usage 有会话时返回统计（Token 紧凑格式 + 上下文百分比）", async () => {

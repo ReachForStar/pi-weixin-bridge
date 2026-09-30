@@ -6,12 +6,13 @@ import { CONFIG } from "./config.js";
 import { IlinkClient } from "./ilink/client.js";
 import { loginWithQR } from "./ilink/login.js";
 import { loadState, saveState } from "./account.js";
-import { runInstallWizard } from "./wizard.js";
+import { runInstallWizard, runModelWizard } from "./wizard.js";
 import {
   BIN_PATH,
   BRIDGE_LOG_FILE,
   daemonStatus,
   readRestartCount,
+  readRuntimeStatus,
   startDaemon,
   stopDaemon,
   tailLog,
@@ -30,23 +31,48 @@ function printHelp(): void {
 用法: pi-weixin-bridge <命令>
 
 命令:
-  install         一键安装：选择保存路径 + 扫码绑定微信 + 启动后台 daemon + 快捷方式（Windows）
+  install         选择路径 → 扫码绑定 → 选择供应方和默认模型 → 启动后台 → Windows 快捷方式
   login           扫码登录 / 重新绑定微信
   start           前台运行桥接服务（默认命令）
   stop            停止后台 daemon
   status          查看后台 daemon 状态
   daemon          后台 daemon 管理（见 daemon help）
-  update          更新到最新版（全局安装：npm i -g 拉 npm 最新；git 安装：pull+install；npx 提示重跑）
+  update          从 npm 安装最新版本并重启后台（需已通过 npm 全局安装）
   uninstall       卸载：停止服务、移除自启与快捷方式（保留账号凭据）
   help            显示本帮助
 
 选项:
-  install --yes   非交互安装（全部使用默认路径，不询问）
+  install --yes   跳过路径和模型询问；仍需扫码（没有已保存账号时）
+                  必须已有默认模型，或用 PI_WEIXIN_MODEL 指定 models.json 中的模型
+
+模型配置:
+  供应方和模型读取 pi 的 models.json，默认位置 ~/.pi/agent/models.json
+  PI_CODING_AGENT_DIR 可指定 pi 配置目录，鉴权沿用 pi 配置
+  扫码后按供应方编号和模型编号选择，默认模型保存到 ~/.pi-weixin-bridge/config.json
+  PI_WEIXIN_MODEL=供应方/模型编号 优先于保存的默认模型
+  微信发送 /model 查看当前模型，/model list 查看编号，/model <编号或供应方/模型> 切换
+  微信切换仅影响当前会话，重启后保留；/reload 重新读取模型配置
+
+微信命令:
+  /help /status /ping                 帮助、状态、存活检查
+  /new /sessions /resume /rename /export  新建、历史、切换、命名、导出会话
+  /tasks /cancel /stop /history /result /retry  当前任务、取消、停止、记录、结果、重试
+  /files /files find /file /ocr        资料列表、检索、取回、扫描文档转换
+  /project /skill /mcp                项目、技能、MCP
+  /schedule /approve /reject          定时任务、操作确认、拒绝
+  /usage /daily /doctor               会话用量、日用量、本地诊断
+  完整参数与权限说明在微信 /help 和项目 README 中
+
+路径与后台:
+  PI_WEIXIN_STATE_DIR 指定状态目录；PI_WEIXIN_WORKSPACE 指定默认工作目录
+  配置文件固定为 ~/.pi-weixin-bridge/config.json，环境变量优先
+  start 在前台运行；daemon start 在后台运行；daemon logs 查看错误和登录提示
 
 示例:
-  npx -y pi-weixin-bridge install
-  npx -y pi-weixin-bridge login
-  npx -y pi-weixin-bridge status
+  npm install -g pi-weixin-bridge
+  pi-weixin-bridge install
+  pi-weixin-bridge login
+  pi-weixin-bridge status
 `);
 }
 
@@ -65,6 +91,7 @@ function printDaemonHelp(): void {
 
 说明:
   - PID 与日志位于 ~/.pi-weixin-bridge/daemon/（或 PI_WEIXIN_STATE_DIR 下）
+  - 自启依赖当前包和 Node 路径存在；请通过 npm 全局安装
   - 后台模式下会话过期无法扫码：日志会提示在终端运行
     pi-weixin-bridge login 重新扫码，扫码完成后服务自动恢复
 `);
@@ -106,13 +133,13 @@ async function runDaemon(args: string[]): Promise<void> {
   const sub = args[0] ?? "help";
   switch (sub) {
     case "start": {
-      const r = startDaemon();
+      const r = await startDaemon();
       console.log(r.message);
       if (!r.ok) process.exit(1);
       break;
     }
     case "stop": {
-      const r = stopDaemon();
+      const r = await stopDaemon();
       console.log(r.stopped ? "已停止" : "服务未在运行");
       break;
     }
@@ -121,8 +148,8 @@ async function runDaemon(args: string[]): Promise<void> {
       break;
     }
     case "restart": {
-      stopDaemon();
-      const r = startDaemon();
+      await stopDaemon();
+      const r = await startDaemon();
       console.log(r.message);
       if (!r.ok) process.exit(1);
       break;
@@ -167,11 +194,13 @@ async function install(args: string[]): Promise<void> {
 
   // 第 1 步：选择保存路径（交互询问；结果写入 config.json，后续进程与 daemon 子进程均能读到）
   console.log("第 1 步：选择保存路径（账号凭据 / 会话上下文 / 后台日志 / 工作目录）");
-  const choice = await runInstallWizard({ assumeYes });
+  const choice = args.includes("--paths-configured")
+    ? { stateDir: (await import("./config.js")).STATE_DIR, workspace: (await import("./config.js")).WORKSPACE, fromDefaults: true }
+    : await runInstallWizard({ assumeYes });
   if (!choice.fromDefaults) {
     // 本进程的配置常量已在启动时解析完毕，用 env（优先级最高）重执行自身，
     // 保证后续登录/daemon 子进程都生效新路径
-    const r = spawnSync(process.execPath, [BIN_PATH, "install", "--yes"], {
+    const r = spawnSync(process.execPath, [BIN_PATH, "install", "--paths-configured", ...args], {
       stdio: "inherit",
       env: {
         ...process.env,
@@ -197,9 +226,10 @@ async function install(args: string[]): Promise<void> {
     console.log("");
   }
 
-  // 第 3 步：后台 daemon（内置，零第三方依赖：崩溃自动重启 + 日志）
-  console.log("第 3 步：启动后台 daemon");
-  const d = startDaemon();
+  console.log("第 3 步：选择 models.json 中的供应方和默认模型");
+  await runModelWizard({ assumeYes });
+  console.log("第 4 步：启动后台 daemon");
+  const d = await startDaemon();
   console.log(d.message);
   if (!d.ok) {
     console.error("daemon 启动失败，安装中止。");
@@ -208,7 +238,7 @@ async function install(args: string[]): Promise<void> {
   console.log("");
 
   // 第 4 步：快捷方式（仅 Windows）
-  console.log("第 4 步：创建快捷方式");
+  console.log("第 5 步：创建快捷方式");
   createShortcuts();
   console.log("");
 
@@ -219,9 +249,9 @@ async function install(args: string[]): Promise<void> {
   console.log("   - 开机自启（可选）：pi-weixin-bridge daemon install-boot");
 }
 
-function uninstall(): void {
+async function uninstall(): Promise<void> {
   console.log("=== 卸载 pi-weixin-bridge ===");
-  const r = stopDaemon();
+  const r = await stopDaemon();
   console.log(r.stopped ? "已停止后台 daemon" : "daemon 未在运行");
   const boot = uninstallBootTask();
   console.log(boot.message);
@@ -232,56 +262,25 @@ function uninstall(): void {
   console.log(`✅ 已停止服务、移除自启与快捷方式（账号凭据保留在 ~/.pi-weixin-bridge/account.json）`);
 }
 
-/** 更新到最新版：按安装方式分路——
- * 全局安装（npm i -g）：npm install -g pi-weixin-bridge@latest（npm registry）+ 重启 daemon；
- * git 安装（克隆仓库）：git pull + npm install + 重启；
- * npx 临时安装：提示重跑 npx -y pi-weixin-bridge install（npm registry，自动拉最新） */
-function update(): void {
-  console.log("=== 更新 pi-weixin-bridge ===\n");
-
-  const restartDaemon = (): void => {
-    console.log("\n重启服务加载新版本");
-    stopDaemon();
-    const r = startDaemon();
-    console.log(r.message);
-    console.log("\n✅ 更新完成。");
-  };
-
-  // 1) 全局安装（PKG_ROOT 位于 npm 全局目录）：从 npm registry 更新
-  const globalRoot = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: true }).stdout.trim();
-  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\\?\/$/, "").toLowerCase();
-  if (globalRoot && norm(PKG_ROOT).startsWith(norm(globalRoot))) {
-    console.log("当前为全局安装（npm i -g），从 npm registry 更新到最新版…");
-    const r = spawnSync("npm", ["install", "-g", "pi-weixin-bridge@latest"], { stdio: "inherit", shell: true });
-    if (r.status !== 0) {
-      console.error("npm install -g 失败，更新中止。请检查网络/registry 后重试。");
-      process.exit(1);
-    }
-    restartDaemon();
-    return;
+/** 使用 npm 分发版本，更新前停止后台以避免正在运行的源码被替换。 */
+async function update(): Promise<void> {
+  const rootResult = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: process.platform === "win32", timeout: 30_000 });
+  if (rootResult.error || rootResult.status !== 0) throw new Error("无法获取 npm 全局安装目录，请检查 npm 是否可用");
+  const globalRoot = rootResult.stdout.trim();
+  const norm = (path: string) => path.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+  if (!globalRoot || !norm(PKG_ROOT).startsWith(norm(globalRoot) + "/")) {
+    throw new Error("请先运行 npm install -g pi-weixin-bridge，再使用全局命令 update");
   }
-
-  // 2) git 安装（克隆的仓库）：拉代码 + 装依赖 + 重启
-  if (existsSync(join(PKG_ROOT, ".git"))) {
-    console.log("第 1 步：拉取最新代码");
-    const pull = spawnSync("git", ["pull"], { cwd: PKG_ROOT, stdio: "inherit", shell: true });
-    if (pull.status !== 0) {
-      console.error("git pull 失败，更新中止。");
-      process.exit(1);
-    }
-
-    console.log("\n第 2 步：更新依赖");
-    const install = spawnSync("npm", ["install"], { cwd: PKG_ROOT, stdio: "inherit", shell: true });
-    if (install.status !== 0) console.error("npm install 失败，请手动检查。");
-
-    restartDaemon();
-    return;
-  }
-
-  // 3) npx 临时安装：npx 每次运行自动从 npm registry 拉最新版，重跑安装命令即可
-  console.log("当前为 npx 临时安装，npx 每次运行自动从 npm 获取最新版，无需手动更新。");
-  console.log("若后台服务还在跑旧版本，重新运行安装命令即可升级：");
-  console.log("  npx -y pi-weixin-bridge install");
+  console.log("停止后台并从 npm 更新到最新版");
+  await stopDaemon();
+  const result = spawnSync("npm", ["install", "-g", "pi-weixin-bridge@latest"], {
+    stdio: "inherit", shell: process.platform === "win32", timeout: 300_000, windowsHide: true,
+  });
+  if (result.error || result.status !== 0) throw new Error("npm 更新失败，后台保持停止；修复安装后运行 daemon start");
+  const started = await startDaemon();
+  console.log(started.message);
+  if (!started.ok) throw new Error("npm 更新已完成，但后台尚未就绪，请检查 daemon logs");
+  console.log("更新完成。");
 }
 
 /** 构建 daemon 状态表格（两行：supervisor + 桥接） */
@@ -327,10 +326,18 @@ export async function printDaemonStatus(): Promise<void> {
     console.log("\n未运行（pi-weixin-bridge daemon start 启动）");
   }
   console.log(`桥接日志: ${BRIDGE_LOG_FILE}`);
+  const runtime = readRuntimeStatus();
+  const labels: Record<string, string> = { running: "消息循环已启动", "waiting-login": "等待扫码登录", initializing: "初始化中", stopped: "已退出" };
+  console.log(`桥接状态: ${runtime && runtime.pid === st.bridgePid ? labels[runtime.state] ?? runtime.state : st.running ? "启动或重启中" : "未运行"}`);
 }
 
 export async function runCli(args: string[]): Promise<void> {
   const command = args[0] ?? "help";
+  if (args.slice(1).some((argument) => argument === "--help" || argument === "-h")) {
+    if (command === "daemon") printDaemonHelp();
+    else printHelp();
+    return;
+  }
   switch (command) {
     case "install":
       await install(args.slice(1));
@@ -343,7 +350,7 @@ export async function runCli(args: string[]): Promise<void> {
       await import("./index.js");
       break;
     case "stop":
-      stopDaemon();
+      await stopDaemon();
       break;
     case "status":
       await runDaemon(["status"]);
@@ -352,10 +359,10 @@ export async function runCli(args: string[]): Promise<void> {
       await runDaemon(args.slice(1));
       break;
     case "uninstall":
-      uninstall();
+      await uninstall();
       break;
     case "update":
-      update();
+      await update();
       break;
     case "help":
     case "--help":

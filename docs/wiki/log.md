@@ -64,3 +64,15 @@ npm run typecheck、npm test、npm run build 全部成功；115 项测试通过�
 ## [2026-09-30] query | 调研微信桥接可增加功能
 
 核对项目代码、已安装 pi SDK 和 anydoc 文档，并阅读 OpenClaw 与社区微信插件维护者资料，沉淀 [微信桥接功能扩展调研](queries/feature-roadmap-research.md)。推荐文件回传、历史会话和附件资料库，明确访问权限、任务副作用和主动投递令牌约束。仅调研，未实现候选、未安装依赖、未修改版本或发布。
+
+## [2026-09-30] feat | 实现功能服务与后台机制基础
+
+用户选择全部十项功能并确认两项固定依赖，新增状态、资料、任务、调度、权限、操作确认及模型向导模块；修复后台同步等待、停止请求和进程锁。阶段结论记录于 [微信功能服务与权限](entities/feature-services.md) 和 [后台守护进程](entities/background-daemon.md)，集成与验证仍在进行。
+
+## [2026-09-30] feat | 统一 npm 安装并完善模型选择
+
+用户要求安装与更新仅从 npm 获取，GitHub 保存源码；同步 CLI 和双语说明，记录 [npm 分发决策](decisions/npm-distribution.md) 和 [模型配置](entities/model-configuration.md)。首轮完整测试发现 SDK 供应方空配置无效、会话 UUID v7 的八位前缀不唯一，已按真实 SDK 接口修正；类型检查与构建通过，第二轮验证待执行。
+
+## [2026-09-30] lint | 完成十项功能与 npm 分发验证
+
+141 项测试通过、1 项 Windows 不适用权限测试跳过，类型检查、构建、PowerShell AST、真实 CLI 帮助和 npm 打包预检查通过。隔离目录实际验证后台启动、重复实例拒绝、等待扫码状态、停止和再次启动；构建产物调用真实 anydoc 转 PDF 通过。更新功能、模型、后台、文档转换及 npm 分发页面，旧候选标记被当前功能页面取代。npm audit 仍报告 3 项 moderate、3 项 high；未自动升级依赖，未运行真实微信、远程模型或云端 OCR 端到端操作。版本保持 1.6.1，未发布或推送。

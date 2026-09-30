@@ -25,25 +25,51 @@ export const CONFIG_FILE = join(BOOTSTRAP_DIR, "config.json");
 export interface BridgeSettings {
   stateDir?: string;
   workspace?: string;
-  /** 默认模型引用（provider/modelId），由 /model 命令设置 */
+  /** 安装时选择的默认模型引用（provider/modelId） */
   model?: string;
+  access?: { admins: string[]; allowFrom: string[]; permission?: "read-only" | "guarded" | "full" };
+  projects?: Record<string, import("./features/policy.js").ProjectProfile>;
+  maxFileBytes?: number;
+  budget?: { dailyTokens?: number; dailyCost?: number; timeZone?: string };
 }
 
-/** 读取安装向导写入的 config.json（不存在或损坏时回退默认，不抛错） */
+/** 配置损坏时拒绝启动，避免访问限制被误判为未配置。 */
 export function loadSettings(): BridgeSettings {
   if (!existsSync(CONFIG_FILE)) return {};
   try {
-    return JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as BridgeSettings;
-  } catch {
-    return {};
+    const data: unknown = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("配置必须为对象");
+    const config = data as BridgeSettings;
+    for (const field of [config.stateDir, config.workspace, config.model]) {
+      if (field !== undefined && (typeof field !== "string" || !field.trim())) throw new Error("路径和模型配置必须为非空字符串");
+    }
+    if ("access" in config) {
+      const access = config.access;
+      if (!access || !Array.isArray(access.admins) || !Array.isArray(access.allowFrom) ||
+        ![...access.admins, ...access.allowFrom].every((user) => typeof user === "string" && user.length > 0) ||
+        (access.permission !== undefined && !["read-only", "guarded", "full"].includes(access.permission))) throw new Error("访问限制配置无效");
+    }
+    if (config.projects !== undefined) {
+      if (!config.projects || typeof config.projects !== "object" || Array.isArray(config.projects)) throw new Error("projects 必须为对象");
+      for (const [name, project] of Object.entries(config.projects)) {
+        if (name === "default" || !name.trim() || !project || typeof project !== "object" ||
+          typeof project.workspace !== "string" || !project.workspace.trim() ||
+          (project.model !== undefined && (typeof project.model !== "string" || !project.model.trim())) ||
+          (project.permission !== undefined && !["read-only", "guarded", "full"].includes(project.permission)) ||
+          [project.tools, project.skills].some((list) => list !== undefined && (!Array.isArray(list) || !list.every((name) => typeof name === "string" && name.length > 0)))) throw new Error("项目配置无效");
+      }
+    }
+    return config;
+  } catch (error) {
+    throw new Error("config.json 无法读取，请修复配置后重试", { cause: error });
   }
 }
 
 const settings = loadSettings();
 
-/** 内置默认模型（用户 pi 配置中已注册的 amax 网关上的 Qwen3.8-27B） */
-export const DEFAULT_MODEL_REF = "amax/qwen-3.8-27B";
-/** 模型引用：环境变量 > config.json > 内置默认 */
+/** 未选择时要求安装配置，不预设供应方。 */
+export const DEFAULT_MODEL_REF = "";
+/** 模型引用：环境变量 > config.json */
 export const MODEL_REF =
   process.env.PI_WEIXIN_MODEL || settings.model || DEFAULT_MODEL_REF;
 
@@ -52,7 +78,7 @@ export function saveSettings(patch: BridgeSettings): void {
   const next: BridgeSettings = { ...loadSettings() };
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) delete next[k as keyof BridgeSettings];
-    else next[k as keyof BridgeSettings] = v;
+    else (next as Record<string, unknown>)[k] = v;
   }
   mkdirSync(BOOTSTRAP_DIR, { recursive: true });
   writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2), "utf8");

@@ -63,13 +63,12 @@ describe("config 路径解析", () => {
     expect(STATE_DIR).toBe(join(home, "env-state"));
   });
 
-  it("config.json 损坏时回退默认（不抛错）", async () => {
+  it("config.json 损坏时拒绝启动", async () => {
     const bootstrap = join(home, ".pi-weixin-bridge");
     mkdirSync(bootstrap, { recursive: true });
     writeFileSync(join(bootstrap, "config.json"), "{not json", "utf8");
     vi.resetModules();
-    const { STATE_DIR, BOOTSTRAP_DIR } = await import("../src/config.js");
-    expect(STATE_DIR).toBe(BOOTSTRAP_DIR);
+    await expect(import("../src/config.js")).rejects.toThrow("config.json 无法读取");
   });
 
   it("defaultWorkspace 按平台取值", async () => {
@@ -97,7 +96,7 @@ describe("config 路径解析", () => {
 
   it("MODEL_REF：默认 > config.json > 环境变量优先", async () => {
     const { MODEL_REF } = await import("../src/config.js");
-    expect(MODEL_REF).toBe("amax/qwen-3.8-27B"); // 内置默认
+    expect(MODEL_REF).toBe(""); // 安装时选择默认模型
 
     const bootstrap = join(home, ".pi-weixin-bridge");
     mkdirSync(bootstrap, { recursive: true });

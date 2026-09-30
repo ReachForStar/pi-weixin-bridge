@@ -116,11 +116,11 @@ export class MediaDownloadError extends Error {
   }
 }
 
-export async function downloadInboundMedia(items?: MessageItem[], signal?: AbortSignal): Promise<InboundMedia> {
+export async function downloadInboundMedia(items?: MessageItem[], signal?: AbortSignal, workspace = WORKSPACE): Promise<InboundMedia> {
   signal?.throwIfAborted();
   const result: InboundMedia = { images: [], notes: [], files: [] };
   if (!items?.length) return result;
-  const mediaDir = join(WORKSPACE, "media", "inbound");
+  const mediaDir = join(workspace, "media", "inbound");
 
   for (const item of items) {
     try {
@@ -187,6 +187,7 @@ async function uploadBufferToCdn(params: {
   uploadParam?: string;
   filekey: string;
   aeskey: Buffer;
+  signal?: AbortSignal;
 }): Promise<string> {
   const ciphertext = encryptAesEcb(params.buf, params.aeskey);
   const cdnUrl =
@@ -197,6 +198,7 @@ async function uploadBufferToCdn(params: {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream" },
     body: new Uint8Array(ciphertext),
+    signal: params.signal ? AbortSignal.any([params.signal, AbortSignal.timeout(CDN_FETCH_TIMEOUT_MS)]) : AbortSignal.timeout(CDN_FETCH_TIMEOUT_MS),
   });
   if (res.status !== 200) throw new Error(`CDN 上传失败 ${res.status}`);
   const downloadParam = res.headers.get("x-encrypted-param");
@@ -211,8 +213,11 @@ export async function uploadMedia(
   filePath: string,
   toUserId: string,
   mediaType: (typeof UploadMediaType)[keyof typeof UploadMediaType],
+  signal?: AbortSignal,
 ): Promise<UploadedInfo> {
+  signal?.throwIfAborted();
   const plaintext = await readFile(filePath);
+  signal?.throwIfAborted();
   const rawsize = plaintext.length;
   const rawfilemd5 = createHash("md5").update(plaintext).digest("hex");
   const filesize = aesEcbPaddedSize(rawsize);
@@ -228,7 +233,7 @@ export async function uploadMedia(
     filesize,
     no_need_thumb: true,
     aeskey: aeskey.toString("hex"),
-  });
+  }, signal);
   if (!resp.upload_full_url && !resp.upload_param) {
     throw new Error("getUploadUrl 未返回上传 URL");
   }
@@ -238,6 +243,7 @@ export async function uploadMedia(
     uploadParam: resp.upload_param,
     filekey,
     aeskey,
+    signal,
   });
   return {
     filekey,
@@ -249,13 +255,13 @@ export async function uploadMedia(
 }
 
 /** 上传本地图片（uploadMedia 的 IMAGE 包装） */
-export async function uploadImage(client: IlinkClient, filePath: string, toUserId: string): Promise<UploadedInfo> {
-  return uploadMedia(client, filePath, toUserId, UploadMediaType.IMAGE);
+export async function uploadImage(client: IlinkClient, filePath: string, toUserId: string, signal?: AbortSignal): Promise<UploadedInfo> {
+  return uploadMedia(client, filePath, toUserId, UploadMediaType.IMAGE, signal);
 }
 
 /** 上传本地文件（uploadMedia 的 FILE 包装） */
-export async function uploadFile(client: IlinkClient, filePath: string, toUserId: string): Promise<UploadedInfo> {
-  return uploadMedia(client, filePath, toUserId, UploadMediaType.FILE);
+export async function uploadFile(client: IlinkClient, filePath: string, toUserId: string, signal?: AbortSignal): Promise<UploadedInfo> {
+  return uploadMedia(client, filePath, toUserId, UploadMediaType.FILE, signal);
 }
 
 /** 上传本地视频（uploadMedia 的 VIDEO 包装） */

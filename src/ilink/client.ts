@@ -221,11 +221,13 @@ export class IlinkClient {
   }
 
   /** 获取 CDN 上传预签名 URL */
-  async getUploadUrl(req: GetUploadUrlReq): Promise<GetUploadUrlResp> {
+  async getUploadUrl(req: GetUploadUrlReq, signal?: AbortSignal): Promise<GetUploadUrlResp> {
     const raw = await this.post(
       "ilink/bot/getuploadurl",
       { ...req, base_info: buildBaseInfo() },
       CONFIG.apiTimeoutMs,
+      this.baseUrl,
+      signal,
     );
     return JSON.parse(raw) as GetUploadUrlResp;
   }

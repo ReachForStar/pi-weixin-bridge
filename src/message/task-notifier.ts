@@ -8,6 +8,7 @@ export type TaskProgress =
 const TOOL_LABELS: Record<string, string> = {
   read: "正在读取文件", write: "正在写入文件", edit: "正在修改文件", bash: "正在执行命令",
   grep: "正在搜索内容", find: "正在查找文件", ls: "正在查看目录", send_weixin_image: "正在发送图片",
+  send_weixin_file: "正在发送文件", search_weixin_files: "正在检索资料",
 };
 
 export class TaskNotifier {

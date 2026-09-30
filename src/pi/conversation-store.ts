@@ -50,4 +50,25 @@ export class ConversationStore {
     renameSync(temporary, join(directory, "current.json"));
     return opened;
   }
+
+  async list(key: string): Promise<Awaited<ReturnType<typeof SessionManager.list>>> {
+    return SessionManager.list(this.workspace, this.directory(key));
+  }
+
+  async resume(key: string, id: string): Promise<void> {
+    if (!/^[a-f0-9-]{8,36}$/i.test(id)) throw new Error("会话编号至少需要 8 位");
+    const matches = (await this.list(key)).filter((session) => session.id.startsWith(id.toLowerCase()));
+    if (matches.length !== 1) throw new Error("会话编号不存在或不唯一");
+    const session = SessionManager.open(matches[0].path, this.directory(key), this.workspace);
+    const file = session.getSessionFile();
+    if (!file) throw new Error("无法打开历史会话");
+    const temporary = join(this.directory(key), `current-${randomUUID()}.tmp`);
+    writeFileSync(temporary, JSON.stringify({ file: basename(file) }), { encoding: "utf8", flag: "wx", mode: 0o600 });
+    renameSync(temporary, join(this.directory(key), "current.json"));
+  }
+
+  rename(key: string, name: string): void {
+    if (!name.trim() || name.length > 80) throw new Error("会话名称需要 1–80 个字符");
+    this.open(key).appendSessionInfo(name.trim());
+  }
 }

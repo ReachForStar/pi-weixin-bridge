@@ -14,7 +14,7 @@ status: active
 ## 关键文件与接口
 
 - src/ilink/media.ts：InboundMedia.files 返回文件名和实际保存路径，文件名不参与目录选择；随机前缀与 wx 写入避免并发覆盖。
-- src/message/documents.ts：prepareInboundDocuments 使用 anydoc 的 formatFromBytes、formatFromPath 识别格式，优先内容签名；调用同一固定依赖中的 cli.js，不依赖系统全局命令。
+- src/message/documents.ts：prepareInboundDocuments 使用 anydoc 的 formatFromBytes、formatFromPath 识别格式，优先内容签名；调用 scripts/convert-document.mjs 中的 anydoc API，不依赖系统全局命令。
 - src/bridge.ts：媒体下载后执行转换，将 Markdown 路径及 read 指令加入提示；转换错误向微信发送专门提示，不继续伪装成功。
 - src/message/task-notifier.ts：新增 converting 阶段。
 - package.json/package-lock.json：固定 @firecrawl/anydoc 0.2.4，用户已明确授权安装。
@@ -31,10 +31,12 @@ anydoc 负责成熟文件格式解析，桥接服务不自行编写 PDF、Office
 
 下载支持任务取消，CDN 重试等待同样响应取消。媒体地址或密钥缺失、下载或保存失败时抛出 MediaDownloadError 并通知用户，本次任务不提交模型；不把错误包装成附件内容。视频使用随机文件名和独占写入避免并发覆盖。真实本地 HTTP 验证了断连后重试成功、403 不重试、三次失败终止、读取响应时取消且不重试；缺少附件地址同样明确失败。
 
-明确传入 --ocr reject；扫描 PDF 返回退出码 3 时提示需要 OCR，不上传。启用 Firecrawl 云端 OCR 须另行确认，不由本模块自动执行。转换失败保留原件，并将详细原因保存在服务日志。
+默认显式传入 ocr: reject；扫描 PDF 返回退出码 3 时登记 needsOcr、提示 /ocr 文件编号。经单文件请求与 /approve 二次确认后使用 ocr: hosted，上传 Firecrawl。转换 worker 保存受支持办公文档内嵌图片，不在 PDF 上调用不受支持的 toDocument。转换失败保留原件，并将详细原因保存在服务日志。
 
 真实微信账号、远程模型读取、扫描 PDF 与云端 OCR 未进行端到端验证。测试文档内容来自仓库 LICENSE，不使用伪造格式内容。
 
 构建产物调用 anydoc 转 PDF 和 npm 打包预检查均通过，新增模块包含在包的 src 文件目录中。
 
 关联：[对话恢复与任务通知](conversation-recovery.md)、[anydoc 依赖](anydoc.md)。
+
+本轮统一为独立 API worker，真实 PDF、Word 与构建产物转换通过；总计 141 项测试通过、1 项跳过。转换以原件路径加 .md 保存，资料库保留来源；同内容复用已有原件和转换。控制输出上限 16 MiB，不等同 Markdown 文件大小限制。

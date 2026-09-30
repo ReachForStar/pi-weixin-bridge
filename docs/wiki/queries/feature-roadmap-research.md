@@ -11,7 +11,9 @@ status: active
 
 用户要求调研还可以增加哪些功能。本页只记录调研与候选设计，不构成实施或发布授权。调研日期为 2026-09-30；优先顺序是基于当前实现及用户已选择文档处理、会话恢复和任务管理所作的判断，不是用户研究数据。
 
-## 根因与现状依据
+用户后续已确认实现全部十项，当前实现与验证见 [微信功能服务与权限](../entities/feature-services.md)。本页保留调研时的依据与方案，发布仍需另行确认。
+
+## 根因与调研时现状依据
 
 - 已实现：对话恢复、/new、任务进度与失败通知、完整任务队列、/tasks、/cancel、/stop、anydoc 文档转换、图片回传、skills/MCP 入口及全局模型切换。见 [对话恢复与任务通知](../entities/conversation-recovery.md)、[入站文档自动转换](../entities/inbound-documents.md)。
 - src/ilink/media.ts 已有 uploadFile，src/message/builder.ts 已有 buildFileMessage，但 src/pi/sessions.ts 只注册 send_weixin_image，ReplyContext 只开放 sendImage。文件回传的微信侧基础存在，Agent 侧尚未接通。

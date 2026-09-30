@@ -23,7 +23,7 @@ const HELP_TEXT = [
   "1. /help — 显示本帮助",
   "2. /status — 服务状态",
   "3. /new — 开始新对话",
-  "4. /model — 查看当前模型；/model list 列表；/model <provider/modelId> 切换",
+  "4. /model — 当前会话模型；/model list 查看 models.json；/model <编号或供应方/模型> 切换当前会话并保存",
   "5. /skill — skill 列表；/skill <名称> 下一条消息按该 skill 处理",
   "6. /mcp — MCP server 列表；/mcp <名称> 下一条消息调用其工具",
   "7. /reload — 重载模型配置（models.json 改动立即生效）",
@@ -32,7 +32,18 @@ const HELP_TEXT = [
   "10. /ping — 存活检查",
   "11. /tasks — 查看当前对话正在处理和等待中的任务",
   "12. /cancel <任务编号> — 取消指定任务，其余任务继续",
+  "13. /sessions — 当前项目历史；/resume <编号> 切换；/rename <名称> 命名；/export 导出 HTML",
+  "14. /files — 资料列表；/files find <关键词> 检索；/file <编号> 取回原件；/file <编号> markdown 取回转换结果",
+  "15. /ocr <文件编号> — 扫描文档云端 OCR，逐文件确认后上传 Firecrawl",
+  "16. /history — 持久任务记录；/result <编号> 查看结果；/retry <编号> 经确认后重新处理",
+  "17. /project — 查看项目；/project <名称> 切换配置的工作目录与工具权限",
+  "18. /schedule — 查看定时任务；/schedule pause|resume|delete <编号> 管理",
+  '19. /schedule add {"prompt":"任务指令","cron":"0 9 * * *","timeZone":"Asia/Shanghai"} — 周期任务',
+  '20. /schedule add {"prompt":"任务指令","at":"2026-10-01T09:00:00+08:00","timeZone":"Asia/Shanghai"} — 单次任务（使用未来日期）',
+  "21. /approve <编号> — 同意当前操作；/reject <编号> 拒绝；确认超时不执行",
+  "22. /daily — 今日已报告用量；/doctor — 只读本地诊断",
   "",
+  "权限：管理员可切换配置、创建定时任务和确认操作；白名单普通用户只读。文件回传限定当前项目目录。",
   "其他消息直接发给 pi 处理。",
 ].join("\n");
 
@@ -71,7 +82,7 @@ export class SlashCommandHandler {
         case "/new":
           return await this.newSession(ctx.key);
         case "/model":
-          return this.modelCommand(trimmed);
+          return this.modelCommand(trimmed, ctx.key);
         case "/skill":
           return this.skillCommand(trimmed, ctx.key);
         case "/mcp":
@@ -102,15 +113,15 @@ export class SlashCommandHandler {
   }
 
   /** /model 查看 / 切换 / 列表 */
-  private async modelCommand(text: string): Promise<string> {
+  private async modelCommand(text: string, key: string): Promise<string> {
     const arg = text.trim().slice("/model".length).trim();
     if (!arg) {
-      return `当前模型：${this.pi.getModelRef()}`;
+      return `当前模型：${this.pi.getSessionModelRef(key)}`;
     }
     if (arg.toLowerCase() === "list") {
       return await this.pi.listModels();
     }
-    return await this.pi.switchModel(arg);
+    return await this.pi.switchSessionModel(key, arg);
   }
 
   /** /skill 列表 / 设置下一条消息的 skill 指令 */

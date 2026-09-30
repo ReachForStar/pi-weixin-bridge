@@ -17,7 +17,9 @@ status: active
 
 - formatFromBytes：识别文档内容。
 - formatFromPath：识别扩展名，CSV 等无签名格式需要它。
-- CLI 的 --format 显式指定已识别格式，--ocr reject 禁止云端转换。
+- toMarkdownBytes：转换 Markdown，ocr 默认为 reject；逐文件授权后才允许 hosted。
+- toDocument：受支持的非 PDF 文档可取 document.assets，保留内嵌图片。
+- 转换 worker 接收已识别格式，内容签名优先，CSV 等无签名格式使用传入格式。
 - CLI 退出码 0 成功，1 转换失败，2 参数错误，3 需要 OCR。
 
 ## 上下游依赖
@@ -26,4 +28,4 @@ status: active
 
 ## 重要变更记录
 
-2026-09-30：用户指定使用 anydoc，并确认安装固定版本依赖。安装成功，真实 PDF 与 Word 转换回归通过；CLI 路径使用 createRequire 定位安装包，源代码、构建产物和测试加载器使用同一 CJS 解析方式。
+2026-09-30：用户指定使用 anydoc，并确认安装固定版本依赖。安装成功，真实 PDF 与 Word 转换回归通过；当前由独立 API worker import 固定依赖，源代码与构建产物使用同一 scripts 路径；此前 CLI 定位方式已由 worker 替代。

@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { STATE_DIR } from "../config.js";
+import { STATE_DIR, WORKSPACE, MODEL_REF } from "../config.js";
 import { BIN_PATH } from "./daemon.js";
 
 const TASK_NAME = "pi-weixin-bridge";
@@ -34,16 +34,16 @@ function installBootWindows(): { ok: boolean; message: string } {
     return { ok: false, message: `未找到 ${script}` };
   }
   const ps1 = join(PKG_ROOT, "start-service.ps1");
-  let execute: string;
-  let argument: string;
-  if (existsSync(ps1)) {
-    execute = "powershell.exe";
-    argument = `-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${ps1}"`;
-  } else {
-    // npx 临时安装：ps1 不在包内，用 npx 命令拉起（npx 缓存复用已装版本）
-    execute = "cmd.exe";
-    argument = "/c npx -y pi-weixin-bridge daemon start";
-  }
+  if (!existsSync(ps1)) return { ok: false, message: "npm 包缺少 start-service.ps1，请重新安装" };
+  const execute = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const quoted = (value: string) => {
+    if (/["\r\n\0]/.test(value)) throw new Error("自启路径或模型包含无效字符");
+    return '"' + value + '"';
+  };
+  const argument = ["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", quoted(ps1),
+    "-NodePath", quoted(process.execPath), "-StateDir", quoted(STATE_DIR), "-Workspace", quoted(WORKSPACE),
+    ...(MODEL_REF ? ["-ModelRef", quoted(MODEL_REF)] : []),
+    ...(process.env.PI_CODING_AGENT_DIR ? ["-AgentDir", quoted(process.env.PI_CODING_AGENT_DIR)] : [])].join(" ");
   const r = runPowershell(script, [execute, argument]);
   return {
     ok: r.ok,
@@ -70,7 +70,11 @@ const UNIT_FILE = join(homedir(), ".config", "systemd", "user", UNIT_NAME);
 
 /** 生成 systemd 用户服务单元内容（纯函数，便于单测）；含空格的路径加引号（systemd 按空白分词） */
 export function renderSystemdUnit(nodePath: string, binPath: string, pidFile: string): string {
-  const q = (s: string) => (/[\s"']/.test(s) ? `"${s}"` : s);
+  const q = (s: string) => {
+    if (/[\r\n\0]/.test(s)) throw new Error("自启路径包含无效字符");
+    const escaped = s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%");
+    return /[\s"'\\]/.test(s) ? `"${escaped}"` : escaped;
+  };
   return [
     "[Unit]",
     "Description=pi-weixin-bridge background daemon",
@@ -80,6 +84,13 @@ export function renderSystemdUnit(nodePath: string, binPath: string, pidFile: st
     // Type=forking：`daemon start` 拉起 supervisor 后退出，systemd 经 PIDFile 接管 supervisor
     "Type=forking",
     `ExecStart=${q(nodePath)} ${q(binPath)} daemon start`,
+    `ExecStop=${q(nodePath)} ${q(binPath)} daemon stop`,
+    `Environment=${q(`PI_WEIXIN_STATE_DIR=${dirname(dirname(pidFile))}`)}`,
+    `Environment=${q(`PI_WEIXIN_WORKSPACE=${WORKSPACE}`)}`,
+    ...(MODEL_REF ? [`Environment=${q(`PI_WEIXIN_MODEL=${MODEL_REF}`)}`] : []),
+    ...(process.env.PI_CODING_AGENT_DIR ? [`Environment=${q(`PI_CODING_AGENT_DIR=${process.env.PI_CODING_AGENT_DIR}`)}`] : []),
+    "TimeoutStartSec=30",
+    "TimeoutStopSec=20",
     `PIDFile=${q(pidFile)}`,
     "",
     "[Install]",
@@ -116,7 +127,8 @@ function installBootLinux(): { ok: boolean; message: string } {
     renderSystemdUnit(process.execPath, BIN_PATH, join(STATE_DIR, "daemon", "supervisor.pid")),
     "utf8",
   );
-  runSystemctl(["daemon-reload"]);
+  const reload = runSystemctl(["daemon-reload"]);
+  if (!reload.ok) return { ok: false, message: `systemctl daemon-reload 失败: ${reload.output}` };
   const enable = runSystemctl(["enable", TASK_NAME]);
   if (!enable.ok) {
     return { ok: false, message: `systemctl enable 失败: ${enable.output}` };

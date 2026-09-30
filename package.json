@@ -16,6 +16,7 @@
     "scripts",
     "*.ps1",
     "README.md",
+    "README_en.md",
     "LICENSE",
     "NOTICE",
     "CHANGELOG.md"
@@ -57,6 +58,8 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.82.0",
     "@firecrawl/anydoc": "0.2.4",
+    "cron-parser": "5.10.1",
+    "minisearch": "7.2.0",
     "qrcode-terminal": "0.12.0",
     "tsx": "^4.19.0",
     "typebox": "^1.1.38"
