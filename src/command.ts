@@ -9,6 +9,7 @@ import { listSkills, listMcpServers, skillDirective, mcpDirective } from "./cata
 export interface SlashContext {
   /** 会话 key（session_id 或 from_user_id） */
   key: string;
+  stop?: () => Promise<boolean>;
 }
 
 const LIST_MAX = 100;
@@ -24,7 +25,7 @@ const HELP_TEXT = [
   "6. /mcp — MCP server 列表；/mcp <名称> 下一条消息调用其工具",
   "7. /reload — 重载模型配置（models.json 改动立即生效）",
   "8. /usage — 当前对话用量",
-  "9. /stop — 停止进行中的任务",
+  "9. /stop — 停止当前对话的任务（含附件处理和等待中的消息）",
   "10. /ping — 存活检查",
   "",
   "其他消息直接发给 pi 处理。",
@@ -75,7 +76,7 @@ export class SlashCommandHandler {
         case "/usage":
           return this.usage(ctx.key);
         case "/stop":
-          return await this.stop(ctx.key);
+          return await this.stop(ctx);
         case "/ping":
           return "🏓 pong";
         default:
@@ -173,9 +174,9 @@ export class SlashCommandHandler {
   }
 
   /** /stop 中断该对话进行中的任务 */
-  private async stop(key: string): Promise<string> {
-    const ok = await this.pi.interrupt(key);
-    return ok ? "⏹ 已停止当前进行中的任务。" : "当前没有进行中的任务。";
+  private async stop(ctx: SlashContext): Promise<string> {
+    const ok = await (ctx.stop ? ctx.stop() : this.pi.interrupt(ctx.key));
+    return ok ? "⏹ 已请求停止当前对话的任务和等待中的消息。" : "当前没有进行中的任务。";
   }
 
   private async newSession(key: string): Promise<string> {

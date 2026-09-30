@@ -44,3 +44,11 @@ npm run typecheck、npm test、npm run build 全部成功；115 项测试通过�
 ## [2026-09-30] lint | 通过构建产物和打包检查
 
 构建后的 documents.js 调用真实 anydoc 转换 PDF 成功；npm pack --dry-run 成功且包含新增转换模块。Wiki 元数据、Markdown 和相对链接校验通过；版本仍为 1.6.1，未执行推送或发布。
+
+## [2026-09-30] feat | 完善任务排序与附件取消
+
+补齐同一对话从附件到回复的完整队列，/stop 取消当前与等待任务并保留后续消息可用，下载重试响应取消；媒体协议和下载失败明确通知且不提交模型。同步 [对话恢复与任务通知](entities/conversation-recovery.md) 和 [入站文档自动转换](entities/inbound-documents.md)，运行验证待执行。
+
+## [2026-09-30] lint | 通过完整任务生命周期验证
+
+类型检查、构建和全部测试通过，126 项通过、1 项 POSIX 权限测试在 Windows 跳过。任务队列使用真实文档转换及文件读取验证顺序、隔离、停止后恢复；附件重试测试改用真实本地 HTTP 和仓库 LICENSE，验证下载取消及失败边界。真实微信账号与远程模型端到端未执行。

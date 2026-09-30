@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { CONFIG, WORKSPACE } from "../config.js";
 import { logger } from "../logger/index.js";
 import type { IlinkClient } from "./client.js";
@@ -50,34 +51,37 @@ const CDN_FETCH_TIMEOUT_MS = 120_000; // 大文件给足时间
 const CDN_FETCH_RETRIES = 3;
 
 /** 下载 CDN 字节：超时 + 重试（terminated 等瞬时断连重拉；4xx 不重试——签名/参数错误重试无意义） */
-async function fetchCdnBytes(url: string): Promise<Buffer> {
+async function fetchCdnBytes(url: string, signal?: AbortSignal): Promise<Buffer> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= CDN_FETCH_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(CDN_FETCH_TIMEOUT_MS) });
+      signal?.throwIfAborted();
+      const timeout = AbortSignal.timeout(CDN_FETCH_TIMEOUT_MS);
+      const res = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
       if (!res.ok) throw new Error(`CDN 下载失败 ${res.status} ${res.statusText}`);
       return Buffer.from(await res.arrayBuffer());
     } catch (err) {
+      signal?.throwIfAborted();
       lastErr = err;
       if (/CDN 下载失败 4\d\d/.test(String(err))) break;
       if (attempt < CDN_FETCH_RETRIES) {
         logger.warn(`[media] CDN 下载第 ${attempt} 次失败（${String(err)}），${500 * attempt}ms 后重试`);
-        await new Promise((r) => setTimeout(r, 500 * attempt));
+        await delay(500 * attempt, undefined, { signal });
       }
     }
   }
   throw lastErr;
 }
 
-async function downloadAndDecrypt(encryptQueryParam: string, aesKeyBase64: string, fullUrl?: string): Promise<Buffer> {
+async function downloadAndDecrypt(encryptQueryParam: string, aesKeyBase64: string, fullUrl?: string, signal?: AbortSignal): Promise<Buffer> {
   const key = parseAesKey(aesKeyBase64);
   const url = fullUrl || buildCdnDownloadUrl(encryptQueryParam);
-  return decryptAesEcb(await fetchCdnBytes(url), key);
+  return decryptAesEcb(await fetchCdnBytes(url, signal), key);
 }
 
-async function downloadPlain(encryptQueryParam: string, fullUrl?: string): Promise<Buffer> {
+async function downloadPlain(encryptQueryParam: string, fullUrl?: string, signal?: AbortSignal): Promise<Buffer> {
   const url = fullUrl || buildCdnDownloadUrl(encryptQueryParam);
-  return fetchCdnBytes(url);
+  return fetchCdnBytes(url, signal);
 }
 
 /** 按文件头魔数判断图片 MIME */
@@ -103,31 +107,43 @@ export interface InboundMedia {
 }
 
 /** 解析并下载入站消息中的媒体：图片转 base64 给 pi，文件/视频落盘并返回路径说明 */
-export async function downloadInboundMedia(items?: MessageItem[]): Promise<InboundMedia> {
+export class MediaDownloadError extends Error {
+  readonly notice = "⚠️ 附件下载或保存失败，本次任务未提交给模型。请重新发送附件并检查服务日志。";
+
+  constructor(cause: unknown) {
+    super(`媒体处理失败: ${String(cause)}`, { cause });
+    this.name = "MediaDownloadError";
+  }
+}
+
+export async function downloadInboundMedia(items?: MessageItem[], signal?: AbortSignal): Promise<InboundMedia> {
+  signal?.throwIfAborted();
   const result: InboundMedia = { images: [], notes: [], files: [] };
   if (!items?.length) return result;
   const mediaDir = join(WORKSPACE, "media", "inbound");
 
   for (const item of items) {
     try {
+      signal?.throwIfAborted();
       if (item.type === MessageItemType.IMAGE) {
         const img = item.image_item;
-        if (!img?.media?.encrypt_query_param && !img?.media?.full_url) continue;
+        if (!img?.media?.encrypt_query_param && !img?.media?.full_url) throw new Error("图片缺少下载地址");
         // 入站图片优先用 image_item.aeskey（hex），其次 media.aes_key
         const aesKeyB64 = img.aeskey
           ? Buffer.from(img.aeskey, "hex").toString("base64")
           : img.media?.aes_key;
         const buf = aesKeyB64
-          ? await downloadAndDecrypt(img.media?.encrypt_query_param ?? "", aesKeyB64, img.media?.full_url)
-          : await downloadPlain(img.media?.encrypt_query_param ?? "", img.media?.full_url);
+          ? await downloadAndDecrypt(img.media?.encrypt_query_param ?? "", aesKeyB64, img.media?.full_url, signal)
+          : await downloadPlain(img.media?.encrypt_query_param ?? "", img.media?.full_url, signal);
         result.images.push({ mimeType: detectImageMime(buf), data: buf.toString("base64") });
       } else if (item.type === MessageItemType.VOICE) {
         // 有语音转文字时由 extractText 提取为正文，这里仅在无文字时补充说明
         if (!item.voice_item?.text) result.notes.push("[收到一条语音消息（无文字内容）]");
       } else if (item.type === MessageItemType.FILE) {
         const f = item.file_item;
-        if ((!f?.media?.encrypt_query_param && !f?.media?.full_url) || !f?.media?.aes_key) continue;
-        const buf = await downloadAndDecrypt(f.media.encrypt_query_param ?? "", f.media.aes_key, f.media.full_url);
+        if ((!f?.media?.encrypt_query_param && !f?.media?.full_url) || !f?.media?.aes_key) throw new Error("文件缺少下载地址或解密密钥");
+        const buf = await downloadAndDecrypt(f.media.encrypt_query_param ?? "", f.media.aes_key, f.media.full_url, signal);
+        signal?.throwIfAborted();
         await mkdir(mediaDir, { recursive: true });
         const name = f.file_name || `file-${Date.now()}`;
         // 微信文件名不参与目录选择，随机前缀避免并发附件互相覆盖。
@@ -139,15 +155,17 @@ export async function downloadInboundMedia(items?: MessageItem[]): Promise<Inbou
         result.notes.push(`[收到文件 ${name}，已保存到 ${path}]`);
       } else if (item.type === MessageItemType.VIDEO) {
         const v = item.video_item;
-        if ((!v?.media?.encrypt_query_param && !v?.media?.full_url) || !v?.media?.aes_key) continue;
-        const buf = await downloadAndDecrypt(v.media.encrypt_query_param ?? "", v.media.aes_key, v.media.full_url);
+        if ((!v?.media?.encrypt_query_param && !v?.media?.full_url) || !v?.media?.aes_key) throw new Error("视频缺少下载地址或解密密钥");
+        const buf = await downloadAndDecrypt(v.media.encrypt_query_param ?? "", v.media.aes_key, v.media.full_url, signal);
+        signal?.throwIfAborted();
         await mkdir(mediaDir, { recursive: true });
-        const path = join(mediaDir, `video-${Date.now()}.mp4`);
-        await writeFile(path, buf);
+        const path = join(mediaDir, `video-${randomUUID()}.mp4`);
+        await writeFile(path, buf, { flag: "wx" });
         result.notes.push(`[收到视频，已保存到 ${path}]`);
       }
     } catch (err) {
-      result.notes.push(`[媒体处理失败: ${String(err)}]`);
+      signal?.throwIfAborted();
+      throw new MediaDownloadError(err);
     }
   }
   return result;

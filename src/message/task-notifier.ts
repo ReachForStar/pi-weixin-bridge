@@ -1,7 +1,7 @@
 import { logger } from "../logger/index.js";
 
 export type TaskProgress =
-  | { stage: "queued" | "preparing" | "running" | "retrying" | "converting" }
+  | { stage: "queued" | "preparing" | "running" | "retrying" | "converting" | "downloading" }
   | { stage: "tool"; toolName: string }
   | { stage: "tool-completed"; failed: boolean };
 
@@ -46,6 +46,7 @@ export class TaskNotifier {
       case "running": this.stage = "正在生成回复"; break;
       case "retrying": this.stage = "正在重试模型请求"; break;
       case "converting": this.stage = "正在将附件转换为 Markdown"; break;
+      case "downloading": this.stage = "正在下载附件"; break;
       case "tool": this.stage = TOOL_LABELS[progress.toolName] ?? "正在调用工具"; break;
       case "tool-completed":
         this.completedTools++;

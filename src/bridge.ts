@@ -1,12 +1,13 @@
 import { IlinkClient, SessionTimeoutError } from "./ilink/client.js";
 import { AuthError, ProtocolError } from "./ilink/errors.js";
 import { MessageType, TypingStatus, type WeixinMessage } from "./ilink/types.js";
-import { downloadInboundMedia, uploadImage } from "./ilink/media.js";
+import { downloadInboundMedia, MediaDownloadError, uploadImage } from "./ilink/media.js";
 import { ContextStore } from "./ilink/context-store.js";
 import { parseIncomingMessage } from "./message/parser.js";
 import { buildImageMessage, buildTextMessage } from "./message/builder.js";
 import { chunkText } from "./message/markdown.js";
 import { TaskNotifier } from "./message/task-notifier.js";
+import { TaskQueue } from "./message/task-queue.js";
 import { DocumentConversionError, prepareInboundDocuments } from "./message/documents.js";
 import { SlashCommandHandler } from "./command.js";
 import { ChatStoppedError, PiSessionManager, type ReplyContext } from "./pi/sessions.js";
@@ -21,6 +22,7 @@ export class Bridge {
   private getUpdatesBuf = "";
   private consecutiveFailures = 0;
   private slash: SlashCommandHandler;
+  private readonly tasks = new TaskQueue();
 
   constructor(
     private client: IlinkClient,
@@ -114,22 +116,48 @@ export class Bridge {
       }
     };
     const notifier = new TaskNotifier(sendText);
+    const command = incoming.text.trim().split(/\s+/)[0].toLowerCase();
+    // 停止与状态查询必须绕过任务队列，否则无法中断正在等待的附件请求。
+    const immediate = ["/stop", "/ping", "/help", "/status", "/usage"].includes(command);
+    if (!immediate && (incoming.text.trim() || msg.item_list?.length)) {
+      notifier.start();
+      notifier.update({ stage: "queued" });
+    }
+    const operation = (taskSignal: AbortSignal) => this.executeMessage(
+      msg, incoming.text, from, key, contextToken, notifier, sendText, taskSignal, signal,
+    );
+    if (immediate) await operation(signal);
+    else await this.tasks.run(key, signal, operation);
+  }
+
+  private async executeMessage(
+    msg: WeixinMessage,
+    text: string,
+    from: string,
+    key: string,
+    contextToken: string | undefined,
+    notifier: TaskNotifier,
+    sendText: (text: string) => Promise<void>,
+    signal: AbortSignal,
+    shutdownSignal: AbortSignal,
+  ): Promise<void> {
     const onAbort = () => { void notifier.finish(); };
-    signal.addEventListener("abort", onAbort, { once: true });
+    shutdownSignal.addEventListener("abort", onAbort, { once: true });
     try {
       signal.throwIfAborted();
-      await this.processMessage(msg, incoming.text, from, key, contextToken, notifier, sendText, signal);
+      notifier.update({ stage: "preparing" });
+      await this.processMessage(msg, text, from, key, contextToken, notifier, sendText, signal);
     } catch (error) {
-      if (signal.aborted) return;
-      if (error instanceof ChatStoppedError) {
+      if (shutdownSignal.aborted) return;
+      if (signal.aborted || error instanceof ChatStoppedError) {
         await notifier.finish("⏹ 本次任务已停止。");
         return;
       }
-      await notifier.finish(error instanceof DocumentConversionError
+      await notifier.finish(error instanceof DocumentConversionError || error instanceof MediaDownloadError
         ? error.notice : "⚠️ 本次任务处理失败，请检查模型配置和服务日志后重试。");
       throw error;
     } finally {
-      signal.removeEventListener("abort", onAbort);
+      shutdownSignal.removeEventListener("abort", onAbort);
       await notifier.finish();
     }
   }
@@ -148,7 +176,11 @@ export class Bridge {
     if (contextToken) this.contextStore.setContextToken(from, contextToken);
 
     // 斜杠命令优先处理（不经过 pi）
-    const slashReply = await this.slash.handle(text, { key });
+    const slashReply = await this.slash.handle(text, { key, stop: async () => {
+      const stopped = this.tasks.stop(key);
+      const interrupted = await this.pi.interrupt(key);
+      return stopped || interrupted;
+    } });
     if (slashReply !== null) {
       logger.info(`[cmd] ${from}: ${text}`);
       await sendText(slashReply);
@@ -158,7 +190,8 @@ export class Bridge {
     if (!text.trim() && !msg.item_list?.length) return;
     notifier.start();
     // 入站媒体：图片转 base64 供 pi 视觉；文件/视频落盘并以说明注入
-    const media = await downloadInboundMedia(msg.item_list);
+    notifier.update({ stage: "downloading" });
+    const media = await downloadInboundMedia(msg.item_list, signal);
     const documentNotes = await prepareInboundDocuments(media.files, {
       signal, onConverting: () => notifier.update({ stage: "converting" }),
     });
@@ -168,6 +201,7 @@ export class Bridge {
     }
     if (!promptText.trim() && media.images.length) promptText = "请查看这张图片。";
     if (!promptText.trim()) return;
+    signal.throwIfAborted();
 
     logger.info(
       `[in] ${from}: ${promptText.slice(0, 80)}${media.images.length ? `（+${media.images.length} 张图片）` : ""}`,
@@ -195,6 +229,7 @@ export class Bridge {
     }
 
     await notifier.stopProgress();
+    signal.throwIfAborted();
     if (!reply) {
       logger.info("[out]（空回复，跳过发送）");
       await sendText("✅ 本次任务已处理完成，没有文本回复。");

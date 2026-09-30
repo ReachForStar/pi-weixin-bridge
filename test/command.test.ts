@@ -162,7 +162,7 @@ describe("SlashCommandHandler", () => {
 
   it("/stop 有任务时请求中断；无任务时提示", async () => {
     const { handler, mockPi } = makeHandler({ interrupt: vi.fn().mockResolvedValue(true) });
-    expect(await handler.handle("/stop", { key: "k" })).toContain("已停止");
+    expect(await handler.handle("/stop", { key: "k" })).toContain("已请求停止");
     expect(mockPi.interrupt).toHaveBeenCalledWith("k");
     const { handler: h2, mockPi: p2 } = makeHandler();
     expect(await h2.handle("/stop", { key: "k" })).toContain("没有进行中");
