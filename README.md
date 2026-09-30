@@ -13,19 +13,14 @@
 
 ## 架构
 
-```
-微信 App 里的 ClawBot
-      ↕  iLink 协议（HTTPS，ilinkai.weixin.qq.com）
-┌──────────────────────────────┐
-│  pi-weixin-bridge（本服务）     │
-│  ① 扫码登录 → bot_token         │
-│  ② 长轮询 getUpdates 收消息      │
-│  ③ 入站媒体下载解密（图片/文件等） │
-│  ④ 消息 + 图片 → pi prompt        │
-│  ⑤ pi 回复（文本/发图工具）→ 发回  │
-└──────────────────────────────┘
-      ↕  同进程调用（SDK）
-   pi AgentSession
+```mermaid
+flowchart TD
+  微信 -->|iLink HTTPS| 桥接服务
+  桥接服务 --> 附件保存与anydoc转换
+  附件保存与anydoc转换 --> pi会话
+  桥接服务 --> pi会话
+  pi会话 -->|文本与文件工具| 桥接服务
+  桥接服务 -->|上传与回复| 微信
 ```
 
 协议参考腾讯官方开源仓库 [`Tencent/openclaw-weixin`](https://github.com/Tencent/openclaw-weixin)（本服务剥离了其中的 OpenClaw 依赖，仅保留 iLink 客户端）。
@@ -41,12 +36,11 @@
 ### 一键安装（推荐，对标 openclaw-weixin-cli）
 
 ```bash
-npx -y pi-weixin-bridge install
-# 也可从 git 源安装（含最新未发布改动）：
-npx -y github:ReachForStar/pi-weixin-bridge install
+npm install -g pi-weixin-bridge
+pi-weixin-bridge install
 ```
 
-`install` 会依次：① 交互式选择保存路径（状态目录 / pi 工作目录，回车用默认，可 `install --yes` 跳过询问）→ ② 显示二维码供微信扫码绑定（已有账号则跳过）→ ③ 启动内置后台 daemon（崩溃自动重启，零第三方依赖）→ ④ 生成隐藏窗口启动/停止快捷方式（仅 Windows）。
+`install` 会依次：① 交互式选择保存路径（状态目录 / pi 工作目录，回车用默认，可 `install --yes` 跳过询问）→ ② 显示二维码供微信扫码绑定（已有账号则跳过）→ ③ 读取 pi models.json，选择供应方和默认模型 → ④ 启动后台 daemon → ⑤ 生成 Windows 隐藏窗口快捷方式。非交互安装必须已有有效默认模型，或通过 PI_WEIXIN_MODEL 指定，仍会在未登录时显示二维码。
 
 路径选择说明：
 
@@ -63,49 +57,34 @@ pi-weixin-bridge start       # 前台运行桥接服务（默认）
 pi-weixin-bridge stop        # 停止后台 daemon
 pi-weixin-bridge status      # 查看后台 daemon 状态（pm2 list 风格表格：重启次数 / CPU / 内存 / 运行时长）
 pi-weixin-bridge daemon      # daemon 管理：start/stop/status/restart/logs/install-boot/uninstall-boot
-pi-weixin-bridge update      # 更新到最新版（全局安装：npm registry 拉最新 + 重启；git 安装：pull + install + 重启；npx 提示重跑安装命令）
+pi-weixin-bridge update      # 从 npm 更新最新版并重启后台
 pi-weixin-bridge uninstall   # 卸载（停服务、删自启与快捷方式，保留账号）
 pi-weixin-bridge help        # 帮助
 ```
 
-### 手动安装（clone 源码）
+### npm 更新与卸载
 
 ```bash
-git clone https://github.com/ReachForStar/pi-weixin-bridge.git
-cd pi-weixin-bridge
-npm install
+pi-weixin-bridge update
+# 或停止后台后安装指定版本，再启动
+pi-weixin-bridge daemon stop
+npm install -g pi-weixin-bridge@版本号
+pi-weixin-bridge daemon start
 
-# 启动（首次会显示二维码，用微信扫码连接）
-npm start
+# 先移除后台服务、自启和快捷方式，再移除 npm 包
+pi-weixin-bridge uninstall
+npm uninstall -g pi-weixin-bridge
 ```
 
-首次运行：终端显示二维码 → 用微信扫码 → 确认后连接成功。账号凭据保存到 `~/.pi-weixin-bridge/account.json`，之后重启自动复用，无需重复扫码（会话过期时会自动要求重新扫码）。
-
-### 通过 npx 直接安装/运行
-
-本包已发布到 [npm](https://www.npmjs.com/package/pi-weixin-bridge)，带 `bin` 入口（经 `tsx/esm/api` 运行 TS 源码，免构建），可用 npx 直接跑：
-
-```bash
-# 从 npm 直接运行（首次同样需扫码登录）
-npx -y pi-weixin-bridge
-
-# 或全局安装后用命令运行
-npm install -g pi-weixin-bridge
-pi-weixin-bridge
-
-# 也可从 git 源运行（含最新未发布改动）
-npx -y github:ReachForStar/pi-weixin-bridge
-```
-
-> npx 方式适合临时运行/测试；长期后台服务仍推荐下面的 daemon 方式（自动重启、日志、开机自启）。
+GitHub 保存源码和 CI，用户安装与升级统一使用 npm 上已发布的包。账号与本地配置在卸载后保留。更新前停止后台，npm 安装失败时保持停止并明确提示；重新安装成功后运行 daemon start。
 
 ### 后台 daemon 常驻部署（内置，默认推荐）
 
-> 重要：后台进程无法扫码，须**先交互式登录一次**（`npm start` 扫码，账号落盘），再启动 daemon。
+> 重要：后台进程无法扫码，须**先交互式登录一次**（`pi-weixin-bridge install` 选择模型并扫码，账号落盘），再启动 daemon。
 
 ```bash
-# 1. 首次交互式登录（扫码后 Ctrl+C 退出即可，账号已保存）
-npm start
+# 1. 安装并选择模型（自动启动后台）
+pi-weixin-bridge install
 
 # 2. 启动后台 daemon（supervisor 常驻：崩溃自动重启、指数退避、日志轮转）
 pi-weixin-bridge daemon start
@@ -115,7 +94,7 @@ pi-weixin-bridge daemon restart   # 重启
 pi-weixin-bridge daemon stop      # 停止
 ```
 
-内置 daemon 零第三方依赖，PID/日志落在 `~/.pi-weixin-bridge/daemon/`（npx 临时目录被清理也不受影响），跨平台（Windows/POSIX）。
+内置 daemon 零第三方依赖，PID/日志落在 `~/.pi-weixin-bridge/daemon/`；后台重启和自启依赖 npm 包及 Node 路径存在，跨平台（Windows/POSIX）。
 
 > **曾用 PM2 运行？** 1.6.0 起不再提供 PM2 配置。先 `pm2 stop pi-weixin-bridge` 停掉旧进程（避免两个实例同时轮询同一账号），再用 `pi-weixin-bridge daemon start` 启动。
 
@@ -160,11 +139,8 @@ powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-se
 本项目跨平台（Windows / Linux / macOS，daemon 杀进程树自动适配平台）。Linux 下同样支持后台 daemon 与会话过期重登（headless），无需扫码即可后台运行。
 
 ```bash
-git clone https://github.com/ReachForStar/pi-weixin-bridge.git
-cd pi-weixin-bridge && npm install
-pi-weixin-bridge install --yes   # 非交互安装（全部默认路径）
-pi-weixin-bridge login           # 首次扫码（后台进程无法扫码，必须先交互登录一次）
-pi-weixin-bridge daemon start    # 后台常驻
+npm install -g pi-weixin-bridge
+pi-weixin-bridge install       # 选择路径、扫码和模型，随后启动后台
 ```
 
 - 安装向导在非 TTY（如 CI / SSH 无终端）下自动使用默认路径；交互终端则会询问状态目录与工作目录。
@@ -184,6 +160,8 @@ pi-weixin-bridge daemon start    # 后台常驻
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
+| `PI_WEIXIN_MODEL` | 安装时选择 | 默认模型引用，优先于 config.json |
+| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi models.json 与鉴权配置目录 |
 | `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | 状态目录（账号凭据、会话上下文、daemon 日志） |
 | `PI_WEIXIN_WORKSPACE` | Windows `D:\pi_weixin_project` / 其他 `~/pi-weixin-project` | pi 会话的工作目录（Agent 在此读写文件） |
 
@@ -251,7 +229,7 @@ test/                 # 单元测试（vitest）
 - ✅ 长文本分块发送（markdown 分块，避免超出微信单条长度）
 - ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
 - ✅ context_token / typing ticket 持久化（重启恢复）
-- ✅ 斜杠命令（10 个：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/reload` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
+- ✅ 斜杠命令（基本命令：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/reload` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
 - ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / Linux systemd 用户服务）
 - ✅ 跨平台（Windows / Linux / macOS），安装向导交互式选择保存路径 + 凭据权限加固（POSIX 700/600）
 - ⬜ 出站语音（需 silk 编码，未做）
@@ -264,13 +242,15 @@ test/                 # 单元测试（vitest）
 
 ### 附件自动处理
 
-发送 PDF、Word、Excel、PowerPoint 等受支持文档时，桥接服务先保存原件，再使用内置的 anydoc 0.2.4 本地转换为 Markdown，将原件和 Markdown 路径交给 pi。支持格式以 anydoc 的内容识别和扩展名识别结果为准；Markdown、普通文本与其他文件保留现有路径处理方式。转换结果保存在原件旁边（`原文件路径.md`），不会覆盖原件；长时间转换会在任务进度中显示。转换每个文件最多运行 120 秒，Markdown 输出上限为 16 MiB。
+发送 PDF、Word、Excel、PowerPoint 等受支持文档时，桥接服务先保存原件，再使用内置的 anydoc 0.2.4 本地转换为 Markdown，将原件和 Markdown 路径交给 pi。支持格式以 anydoc 的内容识别和扩展名识别结果为准；Markdown、普通文本与其他文件保留现有路径处理方式。转换结果保存在原件旁边（`原文件路径.md`），不会覆盖原件；长时间转换会在任务进度中显示。转换每个文件最多运行 120 秒，子进程控制输出上限为 16 MiB。
 
 扫描型 PDF 会明确提示需要 OCR，原件保留，默认不上传外部服务；若要使用 Firecrawl 云端 OCR，须另行确认上传。损坏或加密文档转换失败时通知用户，不把失败文件当作已转换文档交给 pi。
 
 ### 模型
 
-- **默认模型引用** `amax/qwen-3.8-27B`（需该 provider 已注册在 `~/.pi/agent/models.json`，未注册时回退 pi 默认模型并警告）；`/model <provider/modelId>` 可切换到 models.json 中注册的任何模型，选择会保存为默认（重启后保持）；环境变量 `PI_WEIXIN_MODEL` 可覆盖默认值。
+安装扫码后自动读取 pi 的 `models.json` 中实际配置的供应方，按供应方编号和模型编号选择，保存默认值到 `~/.pi-weixin-bridge/config.json`。不预设供应方。`PI_CODING_AGENT_DIR` 可指定 pi 配置目录，鉴权沿用 pi；缺失配置或默认模型时明确报错。
+
+微信 `/model` 查看当前会话模型，`/model list` 列出供应方、模型及编号，`/model <编号或供应方/模型>` 仅切换当前会话，选择持久化，其他会话与安装默认值保持原选择。`/reload` 更新配置并保留各会话选择；环境变量 `PI_WEIXIN_MODEL` 指定安装默认模型。
 
 ### 斜杠命令
 
@@ -281,7 +261,7 @@ test/                 # 单元测试（vitest）
 | `/new` | 开始新对话（清空当前会话上下文） |
 | `/model` | 查看当前模型 |
 | `/model list` | 可用模型列表（只列 models.json 注册的 provider） |
-| `/model <provider/modelId>` | 切换模型（应用到所有进行中会话并保存为默认） |
+| `/model <provider/modelId>` | 仅切换当前会话模型，保存到会话偏好（也可输入列表编号） |
 | `/skill` | 可用 skill 列表（含说明） |
 | `/skill <名称>` | 下一条消息按该 skill 处理（pi 会先读其 SKILL.md 再执行） |
 | `/mcp` | 已配置 MCP server 列表（含启动命令） |
@@ -295,13 +275,71 @@ test/                 # 单元测试（vitest）
 
 > 命令回复统一用 markdown 列表格式（微信端按 markdown 渲染；单换行会被折成空格，列表项才是硬换行）。
 
+
+### 文件、会话与资料
+
+模型可调用 `send_weixin_file` 把当前项目内的报告、PDF、Word、Excel 等实际文件发回当前对话；默认单文件上限 20 MiB，可通过 `maxFileBytes` 调整。发送前检查真实路径，拒绝目录和越出项目的路径。
+
+- `/sessions` 查看当前项目历史；`/resume <编号>` 切换；`/rename <名称>` 命名；`/export` 导出并发送 HTML。
+- `/files` 查看保存的资料；`/files find <关键词>` 本地检索；`/file <编号>` 取回原件；`/file <编号> markdown` 取回转换结果。
+- 资料按当前微信对话保存，内容 SHA-256 去重；原件位于接收时的项目 `.weixin-files/`，索引位于状态目录 `documents/`。切换项目后，文件取回仍要求当前项目包含该文件，必要时先切回原项目。
+- 本地全文检索最多加载最近 200 份资料，每份文本不超过 2 MiB，返回最多 8 个片段与来源。模型也可用 `search_weixin_files` 检索。
+- 扫描 PDF 使用 `/ocr <文件编号>`，机器人展示上传 Firecrawl 的文件与费用提示后，用户再发 `/approve <确认编号>` 才会执行。仅此次文件获授权；`/reject <编号>` 拒绝，120 秒未确认则取消。
+- anydoc 支持的办公文档内嵌图片会另存为资产；PDF 内嵌图片不通过不受支持的 `toDocument` 提取。转换每文件超时 120 秒；子进程控制输出上限 16 MiB，Markdown 文件本身由磁盘容量限制。
+
+### 权限与项目
+
+配置文件可加入以下字段，示例中的微信用户标识和工作目录需要替换为实际值：
+
+```json
+{
+  "access": {
+    "admins": ["你的微信用户标识"],
+    "allowFrom": ["只读用户标识"],
+    "permission": "guarded"
+  },
+  "projects": {
+    "reports": {
+      "workspace": "D:\\reports",
+      "permission": "guarded",
+      "tools": ["read", "grep", "find", "ls", "write", "edit", "send_weixin_file", "search_weixin_files"]
+    }
+  },
+  "maxFileBytes": 20971520,
+  "budget": { "dailyTokens": 100000, "dailyCost": 5, "timeZone": "Asia/Shanghai" }
+}
+```
+
+未配置 `access` 时保持个人使用方式，能发消息的用户具有完整权限；配置后只接收管理员及白名单消息，普通白名单用户为只读。管理员的 `guarded` 模式在工具执行前展示完整参数，写入、命令执行与文件发送等待编号确认；参数超过展示上限则拒绝操作。`full` 允许完整工具执行，`read-only` 仅允许读取、查找和资料检索，并禁用用户扩展和技能。
+
+`/project` 查看项目，`/project reports` 切换。项目支持 `model`、`tools` 与 `skills` 名单，模型使用实际 `供应方/模型编号`。会话模型选择优先于项目模型，再使用安装默认模型；切换项目清除之前的模型覆盖。工作目录与工具限制不构成操作系统沙箱，完整权限的命令及用户扩展仍需可信。
+
+### 任务历史、定时与预算
+
+`/history` 查看持久任务记录，`/result <编号>` 查看最后保存的文本回复或错误。相同消息编号不会重复提交模型；重启时把未结束的任务标记为中断。`/retry <编号>` 需要再次确认，使用原指令与已保存的附件重新处理，不回滚之前的修改；未完成下载的附件需要重发。`/tasks` 和 `/cancel` 使用当前队列编号，`/history` 使用持久记录编号，两者用途不同。
+
+```text
+/schedule add {"prompt":"检查工作目录并汇报","cron":"0 9 * * *","timeZone":"Asia/Shanghai"}
+/schedule add {"prompt":"汇总今日资料","at":"2026-10-01T09:00:00+08:00","timeZone":"Asia/Shanghai"}
+/schedule
+/schedule pause <编号>
+/schedule resume <编号>
+/schedule delete <编号>
+```
+
+单次日期必须在未来且带时区，周期由 cron-parser 解析。仅管理员可创建和管理。服务需要持续运行及有效微信上下文才能执行、投递；重启不补做正在执行的任务，失败或中断会暂停并保留原因。定时任务使用独立会话，不自动引入普通对话的附件；原项目选择发生变化时暂停。`guarded` 项目的定时执行使用只读工具，`full` 项目保留完整权限；当前定时任务只投递文本，普通对话支持文件回传。
+
+`/daily` 按配置时区报告今日已返回用量，`budget` 达标后拒绝后续请求；未返回 usage 的请求明确记为未知，已报告的部分仍累计。预算无法保证单次任务不超额。`/doctor` 只读检查本地目录、模型配置与权限，不发送模型请求，不输出凭据。
+
+状态目录新增 `preferences/`、`documents/`、`tasks/`、`usage/` 和 `schedules.json`；记录不保存附件解密参数或微信上下文令牌。微信上下文独立存于 `contexts/`，按账号隔离；旧 `context.json` 不跨账号迁移，升级后向机器人发一条消息以刷新上下文。历史、结果、文件可能含私密内容，不自动清理，请维护目录访问权限。
+
 ## ⚠️ 安全提示
 
 pi 是具备工具执行能力的编码 Agent（默认含 bash 等工具）。接入微信后，**任何能给该 ClawBot 发消息的人，都可能通过对话让 pi 在你的机器上执行命令**。请务必：
 
 - 仅在私聊中使用，不要将 ClawBot 拉入不可信的群聊
 - 通过 `PI_WEIXIN_WORKSPACE` 限定 pi 的工作目录，降低误操作影响面
-- 如需更严格的权限控制，可在 `src/pi/sessions.ts` 中通过 `createAgentSession` 的 `tools` 选项限制可用工具
+- 使用 config.json 的 access 白名单、管理员与项目 tools/skills 限制；选择 guarded 要求操作确认
 
 ## 开发
 
@@ -312,6 +350,8 @@ npm run build       # 构建到 dist/
 ```
 
 CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）。推送到 `main` 后比较推送前后的 `package.json` 版本号，仅版本变化且检查通过时发布 npm 并创建 GitHub Release；版本不变和 PR 均不发布。发布前由维护者确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。npm 已发布的版本跳过上传，仍可补建缺失的 Release。
+
+后台 `status` 区分初始化、等待扫码、消息循环已启动与重启中。前台和后台桥接共享独占实例锁，重复启动拒绝；PID 文件损坏时明确报错。停止等待子进程结束，失败保留 PID 信息。Windows 自启使用绝对 PowerShell 路径，隐藏启动脚本等待启动结果并传播退出码；Linux unit 保存自定义路径并配置 ExecStop。实际系统注册需要在使用机器上执行。
 
 ## 故障排查
 
@@ -327,7 +367,7 @@ CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 2
 | 消息被重复处理 / 冲突 | 同一微信账号勿多实例同时轮询 getUpdates；确保只有一个服务在跑 |
 | `/usage` 的 Token/成本显示 0 | 模型服务未返回 usage（部分 OpenAI 兼容代理/自建 vllm 不支持 stream usage），服务端行为非统计故障；上下文占用为本地估算不受影响 |
 | 微信发文件收不到 / 日志出现 terminated | CDN 下载瞬断，1.5.3+ 自动重试（3 次递增退避、120s 超时）；仍失败则重发文件 |
-| gh / npx 网络超时 | github.com 连通性波动，配置代理（`HTTPS_PROXY`）后重试 |
+| npm 安装超时 | 检查 npm registry 配置及网络连接后重试 |
 
 ## 许可
 
