@@ -122,3 +122,7 @@ Windows PowerShell 直接接收参数数组，避免 Author Software 路径截�
 ## [2026-10-01] lint | 验证三平台适配的本地检查
 
 Windows 156 项测试通过、2 项平台跳过，类型检查、构建、真实后台与进程统计通过；准备在开发分支执行三平台 CI，不发布。
+
+## [2026-10-01] lint | 三平台 CI 全部通过
+
+Ubuntu、Windows、macOS 的类型检查、完整测试与构建全部成功，macOS 真实 plutil 往返验证通过。运行 36743737351，提交 c26523d，publish 跳过，1.7.1 不发布。见 [平台适配](entities/platform-support.md)。
