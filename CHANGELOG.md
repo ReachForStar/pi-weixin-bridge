@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-30
+
 ### Added
 
 - 扫码后从 pi models.json 选择供应方及默认模型；/model 会话独立切换并持久保存，完善 CLI 与微信帮助。

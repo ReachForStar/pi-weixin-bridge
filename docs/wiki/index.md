@@ -32,3 +32,5 @@ updated: 2026-09-30
 - [发布前可靠性检查](queries/pre-release-reliability.md) — 发布确认约束与消息处理待修复问题。
 - [后续功能候选](queries/feature-candidates.md) — 早期候选已实现，当前状态见微信功能服务。
 - [微信桥接功能扩展调研](queries/feature-roadmap-research.md) — 文件回传、会话管理、资料库与自动化等十项候选及协议约束。
+
+- [1.7.0 发布记录](queries/release-1-7-0.md) — 发布授权、版本检查与 npm/GitHub 实际结果。
