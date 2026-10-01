@@ -22,11 +22,11 @@ status: active
 
 Windows 从源码编译需要 Visual Studio 2022 C++ 构建工具与 Python。3.6.8 在本机 Node 22.23.2 上成功编译，真实 WMI、中文与空格目录的快捷方式读回、登录任务定义及启动参数和退出码验证通过。Node 主版本变更后需重新安装并验证原生模块。参考[上游说明](https://github.com/durs/node-activex/blob/master/README.md)。
 
-CI 36805698061 的 Windows 镜像包含 Visual Studio 18，npm 内置 node-gyp 11.5.0 无法识别，导致绑定未编译。macOS 与 Linux 安装和检查通过。Windows CI 固定为 windows-2022，其 [官方软件清单](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md)提供 Visual Studio 2022；新一轮验证待完成。
+CI 36805698061 的 Windows 镜像包含 Visual Studio 18，npm 内置 node-gyp 11.5.0 无法识别，导致绑定未编译。Windows CI 固定为 windows-2022，其 [官方软件清单](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md)提供 Visual Studio 2022。[CI 36807346131](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36807346131) 三平台依赖安装、类型检查、测试及构建全部通过，发布任务跳过。
 
 ## 重要变更记录
 
-英文 Windows CI 暴露旧 WSH Save 将中文文件名转换为问号的问题。快捷方式改用 Shell.Application 的 FolderItem.GetLink 与 ShellLinkObject.Save，从包内真实 COM 生成的模板保存 Unicode 路径；模板随 npm 分发。该接口读回长参数时发生截断，因此配置保存在包目录的 start/stop-pi-weixin-bridge.cjs 中，快捷方式只传递相对启动文件名并指定工作目录。卸载同时清理两个启动文件。中文、空格和 emoji 路径下真实生成、COM 读回、实际执行启动文件、参数传递及退出码验证均已本地通过；完整 160 项通过、2 项平台跳过，英文 Windows CI 待核验。
+英文 Windows CI 暴露旧 WSH Save 将中文文件名转换为问号的问题。快捷方式改用 Shell.Application 的 FolderItem.GetLink 与 ShellLinkObject.Save，从包内真实 COM 生成的模板保存 Unicode 路径；模板随 npm 分发。该接口读回长参数时发生截断，因此配置保存在包目录的 start/stop-pi-weixin-bridge.cjs 中，快捷方式只传递相对启动文件名并指定工作目录。卸载同时清理两个启动文件。中文、空格和 emoji 路径下真实生成、COM 读回、实际执行启动文件、参数传递及退出码验证均已本地通过；完整 160 项通过、2 项平台跳过，英文 Windows CI 已通过。
 
 3.6.9 在本机出现 V8 HolderV2 模板编译失败，npm 移除了可选模块；用户确认改用 3.6.8。不修改上游源码，不切换项目 Node 版本，不在模块缺失时静默替代。快捷方式最小化启动 Node，后台子进程隐藏窗口；登录任务定义测试不注册或移除真实系统任务。
 

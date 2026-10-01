@@ -37,6 +37,6 @@ macOS LaunchAgent 前台运行 daemon supervise，不使用会自行退出的 da
 
 本地 Windows 类型检查、构建与 28 个测试文件通过（156 项通过、2 项平台跳过），当时的真实 Node 进程统计、系统 PowerShell、后台生命周期和快捷方式通过；npm 打包与 wiki 校验通过。[远程三平台 CI](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36743737351) 在 c26523d 提交全部成功：Ubuntu、Windows、macOS 均完成依赖安装、类型检查、完整测试和构建；发布任务按条件跳过。系统登录自启注册属于用户机器变更，本地验证不操作用户自启。macOS plutil 往返验证在真实 macOS CI 中执行；真实注册和登录后的运行仍需对应系统环境核验。
 
-后续 96f3316 的 [CI](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36744324199) 在 Windows 进程统计测试超过默认 5 秒而失败；PowerShell 启动耗时具有波动。当前实现已替换为 WMI，测试时限覆盖系统调用的超时边界，CPU 计算使用实际采样间隔。新实现本地类型检查、构建、160 项测试、npm 打包与 wiki 校验通过，2 项按平台跳过；三平台 CI 待核验。
+后续 96f3316 的 [CI](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36744324199) 在 Windows 进程统计测试超过默认 5 秒而失败；PowerShell 启动耗时具有波动。当前实现已替换为 WMI，测试时限覆盖系统调用的超时边界，CPU 计算使用实际采样间隔。新实现本地类型检查、构建、160 项测试、npm 打包与 wiki 校验通过，2 项按平台跳过；[三平台 CI 36807346131](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36807346131) 已全部通过，发布任务跳过。
 
 关联：[后台守护进程](background-daemon.md)、[配置入口](config-command.md)、[快捷方式路径](../queries/windows-shortcut-spaces.md)。

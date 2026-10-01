@@ -29,4 +29,4 @@ src/platform.ts、src/npm-command.ts、scripts/windows-helper.js、scripts/ci-ru
 
 首轮完整验证结果：类型检查、构建、npm 打包及 wiki 校验通过；测试 155 项通过、4 项失败、2 项平台跳过。失败集中于 Windows WSH 接口。独立 JScript、VBScript、32 位与 64 位宿主均返回 0xC0000005，无输出；原因未确定。用户确认安装的 `winax@3.6.9` 在 Node 22.23.2 上出现 V8 HolderV2 模板编译失败；npm 将可选依赖移除。用户随后确认改用 `winax@3.6.8`，现有 VS2022 C++ 工具和 Python 成功编译生成 node_activex.node，真实接口验证通过。
 
-真实验证覆盖中文及空格路径、COM 读回快捷方式、COM 生成登录任务定义、隐藏启动真实 Node 子进程、配置传递与失败退出码、当前 npm JavaScript 入口。测试不注册或删除系统任务，不启动用户实际桥接。原生模块若编译失败则通过 postinstall 明确终止安装，无静默替代路径。快捷方式最小化启动，后台子进程隐藏窗口。新实现本地类型检查、构建、160 项测试、npm 打包与 wiki 校验通过，2 项按平台跳过；三平台 CI 待核验；版本保持 1.7.1，不发布。
+真实验证覆盖中文及空格路径、COM 读回快捷方式、COM 生成登录任务定义、隐藏启动真实 Node 子进程、配置传递与失败退出码、当前 npm JavaScript 入口。测试不注册或删除系统任务，不启动用户实际桥接。原生模块若编译失败则通过 postinstall 明确终止安装，无静默替代路径。快捷方式最小化启动，后台子进程隐藏窗口。新实现本地类型检查、构建、160 项测试、npm 打包与 wiki 校验通过，2 项按平台跳过；[三平台 CI 36807346131](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36807346131) 已全部通过，发布任务跳过；版本保持 1.7.1，不发布。

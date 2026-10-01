@@ -15,12 +15,14 @@ status: active
 
 - PowerShell 无 BOM、裸命令路径检查和错误字符串索引：开发分支不再调用相关 PowerShell 脚本，登录任务直接运行绝对 Node 路径。
 - 默认 D 盘：src/config.ts 新安装使用用户主目录，已存在的旧配置按实际旧目录兼容；显式路径仍需用户提供可写目录。
-- 模型处理失败无通知：src/bridge.ts 的 processGuarded 捕获错误并调用 notifier.finish 发送失败通知，随后继续向外报告错误供日志和任务记录处理；发送仍可能因微信或网络错误失败。
+- 模型处理失败无通知：src/bridge.ts 的 executeMessage 捕获错误并调用 notifier.finish 发送失败通知，随后继续向外报告错误供日志和任务记录处理；发送仍可能因微信或网络错误失败。
 
 ## 解法与验证边界
 
-开发分支已有上述对应机制。本轮登录任务定义、默认目录及通知相关测试执行通过；真实自启注册与重新登录仍未操作，1.7.1 未发布。该 Issue 不能因此视为已在 npm 用户环境解决。本次只读取 Issue，未发评论或关闭。
+开发分支已有上述对应机制。本轮登录任务定义、默认目录及通知生命周期测试执行通过；通知测试覆盖失败消息顺序和幂等性，未连接用户真实微信与供应方验证模型异常投递。真实自启注册与重新登录仍未操作，1.7.1 未发布。该 Issue 不能因此视为已在 npm 用户环境解决。本次只读取 Issue，未发评论或关闭。
 
 ## 涉及模块与复发预防
+
+提交 609f17b 的 [CI 36807346131](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36807346131) 已在 Windows、macOS 和 Linux 全部通过，包括依赖安装、类型检查、测试和构建；发布任务跳过。本地完整验证为 160 项通过、2 项按平台跳过，npm 打包与知识库校验通过。额外发现的英文 Windows 中文快捷方式保存和长参数截断缺陷也已修复并通过本轮验证。
 
 关联[平台适配](../entities/platform-support.md)、[对话恢复与通知](../entities/conversation-recovery.md)、[终端无关机制](windows-shell-independence.md)。运行结果以实际三平台 CI 为准，旧版本故障报告保留，不套用报告中的桩件验证作为项目测试结果。
