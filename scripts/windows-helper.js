@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -31,18 +31,33 @@ try {
   } else {
     const winax = createRequire(import.meta.url)("winax");
     const shell = new winax.Object("WScript.Shell");
+    function readShortcut(file) {
+      const application = new winax.Object("Shell.Application");
+      const folder = application.NameSpace(dirname(file));
+      if (!folder) throw new Error("快捷方式目录不存在");
+      const item = folder.ParseName(basename(file));
+      if (!item) throw new Error("快捷方式文件不存在");
+      return item.GetLink;
+    }
     if (operation === "shortcuts") {
       const root = arg(1);
       const bin = join(root, "bin", "pi-weixin-bridge.js");
       if (!existsSync(bin) || !existsSync(arg(2))) throw new Error("启动入口不存在");
+      const template = join(dirname(script), "templates", "node-launcher.lnk");
+      if (!existsSync(template)) throw new Error("快捷方式模板不存在");
       for (const mode of ["start", "stop"]) {
         const file = join(root, mode + "-pi-weixin-bridge.lnk");
-        const link = shell.CreateShortcut(file);
-        link.TargetPath = arg(2);
-        link.Arguments = quote(script) + " run " + [arg(2), bin, mode, arg(3), arg(4), arg(5), arg(6)].map(quote).join(" ");
+        // ShellLinkObject 接收 Unicode 路径，避免旧 WSH Save 按系统代码页转换文件名。
+        const link = readShortcut(template);
+        const entry = mode + "-pi-weixin-bridge.cjs";
+        const parameters = [script, "run", arg(2), bin, mode, arg(3), arg(4), arg(5), arg(6)];
+        // ShellLinkObject 的参数读取存在长度限制，将配置保存在 Node 启动文件中。
+        writeFileSync(join(root, entry), 'const result = require("node:child_process").spawnSync(process.execPath, ' + JSON.stringify(parameters) + ', { stdio: "inherit", windowsHide: true, timeout: 60000 });\nif (result.error) throw result.error;\nprocess.exitCode = result.status ?? 1;\n', "utf8");
+        link.Path = arg(2);
+        link.Arguments = quote(entry);
         link.WorkingDirectory = root;
-        link.WindowStyle = 7;
-        link.Save();
+        link.ShowCommand = 7;
+        link.Save(file);
         if (!existsSync(file)) throw new Error("快捷方式未生成");
       }
     } else if (operation === "task-preview" || operation === "task-install") {
@@ -88,11 +103,11 @@ try {
         console.log([(Number(item.KernelModeTime) + Number(item.UserModeTime)) / 10000000, Number(item.WorkingSetSize), Math.max(0, (Date.now() - new Date(started.GetVarDate()).getTime()) / 1000)].join("\t"));
       }
     } else if (operation === "inspect-shortcut") {
-      const link = shell.CreateShortcut(arg(1));
-      console.log(String(link.TargetPath));
+      const link = readShortcut(arg(1));
+      console.log(String(link.Path));
       console.log(String(link.Arguments));
       console.log(String(link.WorkingDirectory));
-      console.log(Number(link.WindowStyle));
+      console.log(Number(link.ShowCommand));
     } else throw new Error("Windows 接口操作无效");
   }
 } catch (error) {

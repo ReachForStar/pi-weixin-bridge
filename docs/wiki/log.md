@@ -150,3 +150,15 @@ Ubuntu、Windows、macOS 的类型检查、完整测试与构建全部成功，m
 ## [2026-10-01] fix | 固定 Windows 原生构建工具环境
 
 CI 36805698061 的 macOS 与 Linux 全部通过；Windows 原因确定为 Visual Studio 18 未被 npm 内置 node-gyp 11.5.0 识别。固定 Windows 检查镜像为 windows-2022，官方镜像含 Visual Studio 2022；文档明确相同构建要求。新一轮 CI 待核验，1.7.1 未发布。
+
+## [2026-10-01] query | 检查 GitHub 已知问题
+
+通过 gh 查询所有状态 Issues，仅发现打开的 Issue #1，报告 1.6.1 的五项 Windows 与通知缺陷。逐项对应当前开发代码，记录未发布与真实登录自启尚未验证的边界，不评论或关闭 Issue。
+
+## [2026-10-01] fix | 使用 Unicode 快捷方式接口
+
+CI 36805970712 的 Windows 原生编译、类型检查及 159 项测试通过，失败集中在旧 WSH Save 将中文路径转换为问号。改用 ShellLinkObject.Save 的路径参数，从真实 COM 生成的模板创建快捷方式，并覆盖中文、空格和 emoji；本地与英文 Windows CI 待核验。
+
+## [2026-10-01] lint | 验证 Unicode 快捷方式与启动参数
+
+快捷方式使用相对 Node 启动文件名，将完整参数保存在生成的 CJS 文件中，避免 ShellLinkObject 长参数截断。中文、空格和 emoji 路径下实际执行生成的启动文件并验证参数和失败退出码；本地 160 项通过、2 项平台跳过，类型检查、构建、npm 模板分发与 wiki 校验通过。英文 Windows CI 待核验，真实登录自启未执行，1.7.1 未发布。

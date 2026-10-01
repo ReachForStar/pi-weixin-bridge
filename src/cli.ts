@@ -27,7 +27,7 @@ import { npmCommand } from "./npm-command.js";
 
 // 包根目录用于定位随 npm 分发的系统适配脚本。
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SHORTCUTS = ["start-pi-weixin-bridge.lnk", "stop-pi-weixin-bridge.lnk"];
+const SHORTCUTS = ["start-pi-weixin-bridge.lnk", "stop-pi-weixin-bridge.lnk", "start-pi-weixin-bridge.cjs", "stop-pi-weixin-bridge.cjs"];
 
 function printHelp(): void {
   console.log(`pi-weixin-bridge — 微信 ClawBot ↔ pi 桥接服务

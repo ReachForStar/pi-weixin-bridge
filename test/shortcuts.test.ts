@@ -2,35 +2,41 @@ import { describe, it, expect } from "vitest";
 import { copyFileSync, mkdirSync, mkdtempSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 import { createShortcuts } from "../src/cli.js";
 import { runWindowsHelper } from "../src/platform.js";
 
 describe.skipIf(process.platform !== "win32")("真实 Windows 系统接口", () => {
   function directory(): string {
     mkdirSync("tmp", { recursive: true });
-    return mkdtempSync(resolve("tmp", "Author Software 中文 shortcuts "));
+    return mkdtempSync(resolve("tmp", "Author Software 中文 🚀 shortcuts "));
   }
   function helper(root: string): string {
     mkdirSync(join(root, "scripts"));
     const file = join(root, "scripts", "windows-helper.js");
     copyFileSync("scripts/windows-helper.js", file);
+    mkdirSync(join(root, "scripts", "templates"));
+    copyFileSync("scripts/templates/node-launcher.lnk", join(root, "scripts", "templates", "node-launcher.lnk"));
     return file;
   }
   it("带空格与中文目录实际生成快捷方式并通过 COM 读取", () => {
     const root = directory();
     const script = helper(root);
     mkdirSync(join(root, "bin"));
-    copyFileSync("bin/pi-weixin-bridge.js", join(root, "bin", "pi-weixin-bridge.js"));
+    writeFileSync(join(root, "bin", "pi-weixin-bridge.js"), 'import { writeFileSync } from "node:fs"; writeFileSync("invocation.json", JSON.stringify(process.argv.slice(2))); process.exit(7);', "utf8");
     createShortcuts(root);
     for (const mode of ["start", "stop"]) {
       const file = join(root, mode + "-pi-weixin-bridge.lnk");
       expect(existsSync(file)).toBe(true);
       const [target, args, working, style] = runWindowsHelper(["inspect-shortcut", file], script).split(/\r?\n/);
       expect(target.toLowerCase()).toBe(process.execPath.toLowerCase());
-      expect(args).toContain('"' + script + '" run "' + process.execPath + '"');
-      expect(args).toContain('"' + join(root, "bin", "pi-weixin-bridge.js") + '" "' + mode + '"');
+      expect(args).toBe('"' + mode + '-pi-weixin-bridge.cjs"');
       expect(working.toLowerCase()).toBe(root.toLowerCase());
       expect(Number(style)).toBe(7);
+      const result = spawnSync(target, [mode + "-pi-weixin-bridge.cjs"], { cwd: working, encoding: "utf8", timeout: 60_000, windowsHide: true });
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(7);
+      expect(JSON.parse(readFileSync(join(root, "invocation.json"), "utf8"))).toEqual(["daemon", mode]);
     }
   }, 100_000);
   it("缺少实际入口时传播系统接口失败", () => {

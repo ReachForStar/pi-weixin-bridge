@@ -6,6 +6,7 @@ coverage/
 state/
 tmp/
 *.lnk
+!scripts/templates/node-launcher.lnk
 # 环境变量与敏感文件（密钥/证书）
 .env*
 !.env.example

@@ -44,3 +44,4 @@ updated: 2026-10-01
 
 - [Windows 快捷方式脚本路径空格](queries/windows-shortcut-spaces.md) — 先前路径解析故障，已由终端无关机制取代。
 - [终端无关运行机制与 Windows CI](queries/windows-shell-independence.md) — Node 入口、Windows 原生接口与真实验证边界。
+- [GitHub 已知问题检查](queries/github-issues-review.md) — Issue #1 的五项旧版本缺陷与当前开发分支对应机制。

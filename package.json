@@ -15,6 +15,7 @@
     "src",
     "scripts/*.mjs",
     "scripts/windows-helper.js",
+    "scripts/templates/node-launcher.lnk",
     "README.md",
     "README_en.md",
     "LICENSE",
