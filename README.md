@@ -118,7 +118,7 @@ pi-weixin-bridge daemon uninstall-boot   # 移除
 
 运行 `pi-weixin-bridge install` 会在 npm 包目录生成 `start-pi-weixin-bridge.lnk` 与 `stop-pi-weixin-bridge.lnk`，双击即可启动或停止后台。快捷方式以最小化方式运行 Node.js，后台子进程隐藏窗口，并保存状态目录、工作目录、模型和 pi 配置目录。
 
-CLI 与业务脚本使用 Node.js，不调用 PowerShell、cmd 或 bash。Windows 的快捷方式、进程统计和登录任务由 Node.js 原生 COM 绑定调用 WMI 和任务计划程序接口执行；Windows 安装需要可用的 Visual Studio C++ 构建工具及 Python，原生模块编译失败会终止安装。自启注册仍需运行 `pi-weixin-bridge daemon install-boot`。
+CLI 与业务脚本使用 Node.js，不调用 PowerShell、cmd 或 bash。Windows 的快捷方式、进程统计和登录任务由固定版本 `winax@3.6.8` 调用 COM 接口执行；Windows 安装需要 Visual Studio 2022 C++ 构建工具及 Python，原生模块编译失败会终止安装。自启注册仍需运行 `pi-weixin-bridge daemon install-boot`。
 
 ### Windows / macOS / Linux 适配
 

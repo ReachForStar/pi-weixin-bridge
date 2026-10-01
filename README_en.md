@@ -112,7 +112,7 @@ pi-weixin-bridge daemon uninstall-boot   # remove it
 
 `pi-weixin-bridge install` creates `start-pi-weixin-bridge.lnk` and `stop-pi-weixin-bridge.lnk` in the npm package directory. Double-click them to start or stop the daemon. The shortcuts run Node.js minimized, while daemon child processes hide their windows and preserves the state directory, workspace, model and pi configuration directory.
 
-The CLI and application scripts run in Node.js without invoking PowerShell, cmd or bash. Windows shortcuts, process statistics and login tasks use native Node.js COM bindings for WMI and Task Scheduler. Windows installation requires Visual Studio C++ build tools and Python; a native build failure stops installation. Register login startup with `pi-weixin-bridge daemon install-boot`.
+The CLI and application scripts run in Node.js without invoking PowerShell, cmd or bash. Windows shortcuts, process statistics and login tasks use pinned `winax@3.6.8` COM bindings for WMI and Task Scheduler. Windows installation requires Visual Studio 2022 C++ build tools and Python; a native build failure stops installation. Register login startup with `pi-weixin-bridge daemon install-boot`.
 
 ### Linux / WSL
 

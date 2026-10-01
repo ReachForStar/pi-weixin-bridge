@@ -146,3 +146,7 @@ Ubuntu、Windows、macOS 的类型检查、完整测试与构建全部成功，m
 ## [2026-10-01] query | 收集 CI 原生编译失败
 
 7bcbff8 的 CI 36805465877 在 Windows 安装阶段因 winax 缺失而失败，postinstall 校验正确阻止继续运行。可选依赖的编译原因尚未输出；开启安装前台日志并关闭矩阵快速失败，收集三平台完整结果。未发布。
+
+## [2026-10-01] fix | 固定 Windows 原生构建工具环境
+
+CI 36805698061 的 macOS 与 Linux 全部通过；Windows 原因确定为 Visual Studio 18 未被 npm 内置 node-gyp 11.5.0 识别。固定 Windows 检查镜像为 windows-2022，官方镜像含 Visual Studio 2022；文档明确相同构建要求。新一轮 CI 待核验，1.7.1 未发布。
