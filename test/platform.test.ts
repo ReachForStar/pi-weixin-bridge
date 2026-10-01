@@ -9,11 +9,14 @@ import { npmCommand } from "../src/npm-command.js";
 
 describe("实际运行系统适配", () => {
   it("当前 Node 进程的真实 CPU、内存与运行时间可读取", async () => {
+    const before = process.uptime();
     const stats = await procStats(process.pid);
     expect(stats).not.toBeNull();
     expect(stats!.memBytes).toBeGreaterThan(0);
     expect(stats!.cpuPct).toBeGreaterThanOrEqual(0);
     expect(stats!.uptimeSec).toBeGreaterThanOrEqual(0);
+    expect(stats!.uptimeSec).toBeGreaterThanOrEqual(Math.max(0, before - 3));
+    expect(stats!.uptimeSec).toBeLessThanOrEqual(process.uptime() + 3);
     await expect(procStats(0)).rejects.toThrow("正整数");
   }, 65_000);
   it.skipIf(process.platform !== "win32")("Windows 直接通过 WMI 读取真实进程", () => {
@@ -21,6 +24,7 @@ describe("实际运行系统适配", () => {
     expect(values).toHaveLength(3);
     expect(values.every(Number.isFinite)).toBe(true);
     expect(values[1]).toBeGreaterThan(0);
+    expect(Math.abs(values[2] - process.uptime())).toBeLessThan(3);
   }, 35_000);
   it("当前 Node 直接运行 npm JavaScript 入口", () => {
     const result = spawnSync(process.execPath, [npmCommand(), "--version"], { encoding: "utf8", timeout: 30_000, windowsHide: true });

@@ -48,3 +48,5 @@ updated: 2026-10-01
 - [登录自启与模型失败通知验收](queries/login-notification-validation.md) — 真实系统登录、模型请求故障注入、通过判据和恢复方式。
 - [Windows 登录任务注册账户错误](queries/windows-task-logon-failure.md) — 实际注册失败、进程 SID 与空 COM 密码参数。
 - [用户 Windows 自启注册失败输出](sources/windows-task-registration-output.md) — 注册失败的终端证据与旧日志边界。
+- [用户登录后后台与微信验收输出](sources/windows-login-validation-output.md) — 登录后后台在线及普通消息回复的实际证据。
+- [Windows 进程运行时间时区错误](queries/windows-process-uptime-timezone.md) — VT_DATE 时区转换导致的零运行时间与真实进程验证。

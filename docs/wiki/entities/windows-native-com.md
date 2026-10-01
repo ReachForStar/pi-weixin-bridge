@@ -26,6 +26,8 @@ CI 36805698061 的 Windows 镜像包含 Visual Studio 18，npm 内置 node-gyp 1
 
 ## 重要变更记录
 
+用户登录后输出已记录后台在线和普通微信消息回复。WMI 运行时间改为 GetVarDate(false) 明确使用 UTC，避免本地 VT_DATE 经 JavaScript 转换后偏移 8 小时；真实同一进程状态与 process.uptime 独立参照测试通过，见[时区排查](../queries/windows-process-uptime-timezone.md)。
+
 实际登录任务注册曾返回 0x8007052e；注册身份改从当前 Node 进程 WMI GetOwnerSid 读取，不再依赖用户名环境变量，交互登录密码传递 null 空 VARIANT。任务定义增加 TASK_VALIDATE_ONLY 校验。经用户授权，本机真实注册成功并读回验证，任务已保留；系统注销登录尚未执行，详细记录见[账户错误排查](../queries/windows-task-logon-failure.md)。
 
 英文 Windows CI 暴露旧 WSH Save 将中文文件名转换为问号的问题。快捷方式改用 Shell.Application 的 FolderItem.GetLink 与 ShellLinkObject.Save，从包内真实 COM 生成的模板保存 Unicode 路径；模板随 npm 分发。该接口读回长参数时发生截断，因此配置保存在包目录的 start/stop-pi-weixin-bridge.cjs 中，快捷方式只传递相对启动文件名并指定工作目录。卸载同时清理两个启动文件。中文、空格和 emoji 路径下真实生成、COM 读回、实际执行启动文件、参数传递及退出码验证均已本地通过；完整 160 项通过、2 项平台跳过，英文 Windows CI 已通过。

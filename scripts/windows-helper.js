@@ -108,7 +108,10 @@ try {
         const item = processes.ItemIndex(0);
         const started = new winax.Object("WbemScripting.SWbemDateTime");
         started.Value = String(item.CreationDate);
-        console.log([(Number(item.KernelModeTime) + Number(item.UserModeTime)) / 10000000, Number(item.WorkingSetSize), Math.max(0, (Date.now() - new Date(started.GetVarDate()).getTime()) / 1000)].join("\t"));
+        // COM 的 VT_DATE 没有时区，明确转换为 UTC 后再与 JavaScript 时间比较。
+        const startedAt = new Date(started.GetVarDate(false)).getTime();
+        if (!Number.isFinite(startedAt)) throw new Error("进程创建时间无效");
+        console.log([(Number(item.KernelModeTime) + Number(item.UserModeTime)) / 10000000, Number(item.WorkingSetSize), Math.max(0, (Date.now() - startedAt) / 1000)].join("\t"));
       }
     } else if (operation === "inspect-shortcut") {
       const link = readShortcut(arg(1));
