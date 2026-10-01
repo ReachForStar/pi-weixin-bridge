@@ -26,4 +26,4 @@ status: active
 
 ## 存疑或待跟进
 
-真实模型失败通知尚无结果。仅凭两次初始化日志不能判定崩溃或重复运行；运行时间问题另见[Windows 运行时间时区错误](../queries/windows-process-uptime-timezone.md)。
+本份输出没有模型失败通知结果，后续[模型故障验收](model-failure-validation-output.md)已由用户确认通过。仅凭两次初始化日志不能判定崩溃或重复运行；运行时间问题另见[Windows 运行时间时区错误](../queries/windows-process-uptime-timezone.md)。

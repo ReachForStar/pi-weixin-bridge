@@ -25,4 +25,4 @@ status: active
 
 ## 存疑或待跟进
 
-后续修复已经用户授权真实注册并读回验证，见[账户错误排查](../queries/windows-task-logon-failure.md)；系统重新登录和模型失败通知仍待核验。该后续结果不改变原始故障输出。
+后续修复已经用户授权真实注册并读回验证，见[账户错误排查](../queries/windows-task-logon-failure.md)；后续[登录输出](windows-login-validation-output.md)和[模型失败通知确认](model-failure-validation-output.md)补充了实际运行证据。后续结果不改变原始故障输出。
