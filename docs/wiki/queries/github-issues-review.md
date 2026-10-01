@@ -21,6 +21,12 @@ status: active
 
 修复已合并 main 并发布 1.7.1，登录任务定义、默认目录及通知生命周期测试执行通过。实际注册成功，登录验收流程后的后台与普通微信回复正常；[模型连接失败通知](../sources/model-failure-validation-output.md)已由真实日志及用户微信确认验证，故障后的 /ping 和配置恢复后普通回复正常。用户确认文案后已发送[回复](https://github.com/ReachForStar/pi-weixin-bridge/issues/1#issuecomment-5924328507)，保持 Issue 打开供报告者升级核验；发布结果见[1.7.1 记录](release-1-7-1.md)。
 
+## 五项缺陷与附加建议的范围
+
+1.7.1 已处理五项主要缺陷的对应原因：PowerShell 编码、裸命令路径校验和参数插值所依赖的旧入口已移除；新安装默认工作目录使用用户主目录；模型异常通过任务通知回发。Windows 真实注册、登录验收输出与真实微信模型连接失败通知已有证据。
+
+报告者在第 4 项另建议保存 last-error.txt 并在 status 中直接展示最近致命错误。当前 src/index.ts 只写服务日志与运行状态，src/cli.ts 的 printDaemonStatus 展示状态及日志路径，未实现该错误摘要机制。已有显式无效 workspace 不会被自动覆盖，仍需通过 config 修改。故五项主要缺陷已处理，不等于报告中的全部附加建议均已实现。人工故障验收覆盖连接失败，未逐一实测限流、鉴权或所有供应方错误类型。
+
 ## 涉及模块与复发预防
 
 提交 609f17b 的 [CI 36807346131](https://github.com/ReachForStar/pi-weixin-bridge/actions/runs/36807346131) 已在 Windows、macOS 和 Linux 全部通过，包括依赖安装、类型检查、测试和构建；发布任务跳过。本地完整验证为 160 项通过、2 项按平台跳过，npm 打包与知识库校验通过。额外发现的英文 Windows 中文快捷方式保存和长参数截断缺陷也已修复并通过本轮验证。
