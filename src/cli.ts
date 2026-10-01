@@ -7,6 +7,9 @@ import { IlinkClient } from "./ilink/client.js";
 import { loginWithQR } from "./ilink/login.js";
 import { loadState, saveState } from "./account.js";
 import { runInstallWizard, runModelWizard } from "./wizard.js";
+import { runConfigCommand, printConfigHelp } from "./config-command.js";
+import { runWindowsHelper } from "./platform.js";
+import { STATE_DIR, WORKSPACE, MODEL_REF } from "./config.js";
 import {
   BIN_PATH,
   BRIDGE_LOG_FILE,
@@ -20,10 +23,11 @@ import {
 import { installBootTask, uninstallBootTask } from "./daemon/boot.js";
 import { runSupervisor } from "./daemon/supervisor.js";
 import { procStats, renderStatusTable, type StatusRow } from "./daemon/procs.js";
+import { npmCommand } from "./npm-command.js";
 
-// 包根目录（src 的上级），用于定位 ps1 脚本与计划任务
+// 包根目录用于定位随 npm 分发的系统适配脚本。
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SHORTCUTS = ["start-pi-weixin-bridge.lnk", "stop-pi-weixin-bridge.lnk"];
+const SHORTCUTS = ["start-pi-weixin-bridge.lnk", "stop-pi-weixin-bridge.lnk", "start-pi-weixin-bridge.cjs", "stop-pi-weixin-bridge.cjs"];
 
 function printHelp(): void {
   console.log(`pi-weixin-bridge — 微信 ClawBot ↔ pi 桥接服务
@@ -33,6 +37,7 @@ function printHelp(): void {
 命令:
   install         选择路径 → 扫码绑定 → 选择供应方和默认模型 → 启动后台 → Windows 快捷方式
   login           扫码登录 / 重新绑定微信
+  config          配置路径、默认模型、访问权限、项目和预算（见 config help）
   start           前台运行桥接服务（默认命令）
   stop            停止后台 daemon
   status          查看后台 daemon 状态
@@ -72,6 +77,7 @@ function printHelp(): void {
   npm install -g pi-weixin-bridge
   pi-weixin-bridge install
   pi-weixin-bridge login
+  pi-weixin-bridge config
   pi-weixin-bridge status
 `);
 }
@@ -85,7 +91,7 @@ function printDaemonHelp(): void {
   status           查看运行状态与日志路径
   restart          重启 daemon
   logs [n]         查看桥接日志末尾 n 行（默认 50）
-  install-boot     注册开机自启（Windows 计划任务 / Linux systemd 用户服务，免管理员）
+  install-boot     注册登录自启（Windows 计划任务 / macOS LaunchAgent / Linux systemd，免管理员）
   uninstall-boot   移除开机自启
   supervise        内部命令：supervisor 进程本体（由 daemon start 拉起，勿手动运行）
 
@@ -111,22 +117,17 @@ async function login(): Promise<boolean> {
   }
 }
 
-/** 运行 create-shortcuts.ps1 生成隐藏窗口快捷方式（仅 Windows） */
-function createShortcuts(): void {
+/** 使用系统脚本宿主生成隐藏启动快捷方式，不依赖终端配置。 */
+export function createShortcuts(packageRoot: string = PKG_ROOT): void {
   if (process.platform !== "win32") {
     console.log("（非 Windows 平台，跳过快捷方式；自启用 daemon install-boot）");
     return;
   }
-  const script = join(PKG_ROOT, "create-shortcuts.ps1");
+  const script = join(packageRoot, "scripts", "windows-helper.js");
   if (!existsSync(script)) {
-    console.log("（未找到 create-shortcuts.ps1，跳过快捷方式）");
-    return;
+    throw new Error("缺少 windows-helper.js，快捷方式创建失败；后台状态请用 status 查看");
   }
-  spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], {
-    cwd: PKG_ROOT,
-    stdio: "inherit",
-    shell: true,
-  });
+  runWindowsHelper(["shortcuts", packageRoot, process.execPath, STATE_DIR, WORKSPACE, MODEL_REF, process.env.PI_CODING_AGENT_DIR ?? ""], script);
 }
 
 async function runDaemon(args: string[]): Promise<void> {
@@ -264,7 +265,8 @@ async function uninstall(): Promise<void> {
 
 /** 使用 npm 分发版本，更新前停止后台以避免正在运行的源码被替换。 */
 async function update(): Promise<void> {
-  const rootResult = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: process.platform === "win32", timeout: 30_000 });
+  const npm = npmCommand();
+  const rootResult = spawnSync(process.execPath, [npm, "root", "-g"], { encoding: "utf8", timeout: 30_000, windowsHide: true });
   if (rootResult.error || rootResult.status !== 0) throw new Error("无法获取 npm 全局安装目录，请检查 npm 是否可用");
   const globalRoot = rootResult.stdout.trim();
   const norm = (path: string) => path.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
@@ -273,8 +275,8 @@ async function update(): Promise<void> {
   }
   console.log("停止后台并从 npm 更新到最新版");
   await stopDaemon();
-  const result = spawnSync("npm", ["install", "-g", "pi-weixin-bridge@latest"], {
-    stdio: "inherit", shell: process.platform === "win32", timeout: 300_000, windowsHide: true,
+  const result = spawnSync(process.execPath, [npm, "install", "-g", "pi-weixin-bridge@latest"], {
+    stdio: "inherit", timeout: 300_000, windowsHide: true,
   });
   if (result.error || result.status !== 0) throw new Error("npm 更新失败，后台保持停止；修复安装后运行 daemon start");
   const started = await startDaemon();
@@ -335,6 +337,7 @@ export async function runCli(args: string[]): Promise<void> {
   const command = args[0] ?? "help";
   if (args.slice(1).some((argument) => argument === "--help" || argument === "-h")) {
     if (command === "daemon") printDaemonHelp();
+    else if (command === "config") printConfigHelp();
     else printHelp();
     return;
   }
@@ -344,6 +347,9 @@ export async function runCli(args: string[]): Promise<void> {
       break;
     case "login":
       await login();
+      break;
+    case "config":
+      await runConfigCommand(args.slice(1));
       break;
     case "start":
       // bin 包装器已处理 start；这里兜底（直接调 runCli 的场景）

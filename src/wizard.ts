@@ -9,7 +9,6 @@ import {
   CONFIG_FILE,
   STATE_DIR,
   WORKSPACE,
-  defaultWorkspace,
   resolveUserPath,
   saveSettings,
   MODEL_REF,
@@ -22,7 +21,7 @@ import { configuredModels } from "./models.js";
  * 行读取器：缓存先于 question 到达的行（快速管道/pty 输入不会丢答案），
  * EOF 时把挂起的 question 按空输入结算（回退默认值），避免 Ctrl+D 崩溃。
  */
-class LineReader {
+export class LineReader {
   private buffer: string[] = [];
   private waiters: Array<(line: string) => void> = [];
   private closed = false;
@@ -134,7 +133,7 @@ export async function runInstallWizard(
   mkdirSync(BOOTSTRAP_DIR, { recursive: true });
   const settings = {
     stateDir: stateDir === BOOTSTRAP_DIR ? undefined : stateDir,
-    workspace: workspace === defaultWorkspace() ? undefined : workspace,
+    workspace,
   };
   saveSettings(settings);
   logger.info(
@@ -149,7 +148,7 @@ export async function runModelWizard(opts: { assumeYes?: boolean; interactive?: 
   const current = models.find((model) => model.ref === MODEL_REF);
   const interactive = (opts.interactive ?? process.stdout.isTTY === true) && !opts.assumeYes;
   if (!interactive) {
-    if (!current) throw new Error("非交互安装需要用 PI_WEIXIN_MODEL 指定 models.json 中的模型，或先运行交互式 install");
+    if (!current) throw new Error("非交互安装需要用 PI_WEIXIN_MODEL 指定 models.json 中的模型，或先运行 pi-weixin-bridge config model 选择");
     saveSettings({ model: current.ref });
     return current.ref;
   }

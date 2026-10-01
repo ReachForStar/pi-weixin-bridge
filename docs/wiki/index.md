@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-09-30
+updated: 2026-10-01
 ---
 
 # Wiki 索引
@@ -17,6 +17,11 @@ updated: 2026-09-30
 - [后台守护进程](entities/background-daemon.md) — 后台启动、独占锁、等待扫码与真实子进程停止验证。
 - [微信功能服务与权限](entities/feature-services.md) — 十项功能、模型选择、执行权限与验证边界。
 - [供应方读取与会话模型配置](entities/model-configuration.md) — 扫码后默认模型选择、会话独立切换与 CLI 帮助。
+
+- [CLI 配置入口](entities/config-command.md) — 独立交互配置、模型选择、字段校验与生效边界。
+
+- [Windows macOS Linux 适配](entities/platform-support.md) — 系统工具、自启方式、旧路径兼容与三平台 CI。
+- [Windows 原生 COM 绑定](entities/windows-native-com.md) — 固定版本 winax、构建要求与原生模块安装校验。
 
 ## 概念 concepts
 
@@ -36,3 +41,14 @@ updated: 2026-09-30
 - [1.7.0 发布记录](queries/release-1-7-0.md) — 发布授权、版本检查与 npm/GitHub 实际结果。
 
 - [Windows 全局更新 EBUSY](queries/npm-global-install-ebusy.md) — 旧后台占用 npm 包目录与升级后模型配置要求。
+
+- [Windows 快捷方式脚本路径空格](queries/windows-shortcut-spaces.md) — 先前路径解析故障，已由终端无关机制取代。
+- [终端无关运行机制与 Windows CI](queries/windows-shell-independence.md) — Node 入口、Windows 原生接口与真实验证边界。
+- [GitHub 已知问题检查](queries/github-issues-review.md) — Issue #1 的五项旧版本缺陷与当前开发分支对应机制。
+- [登录自启与模型失败通知验收](queries/login-notification-validation.md) — 真实系统登录、模型请求故障注入、通过判据和恢复方式。
+- [Windows 登录任务注册账户错误](queries/windows-task-logon-failure.md) — 实际注册失败、进程 SID 与空 COM 密码参数。
+- [用户 Windows 自启注册失败输出](sources/windows-task-registration-output.md) — 注册失败的终端证据与旧日志边界。
+- [用户登录后后台与微信验收输出](sources/windows-login-validation-output.md) — 登录后后台在线及普通消息回复的实际证据。
+- [Windows 进程运行时间时区错误](queries/windows-process-uptime-timezone.md) — VT_DATE 时区转换导致的零运行时间与真实进程验证。
+- [真实微信模型失败通知验收结果](sources/model-failure-validation-output.md) — 模型连接失败提示、后台继续响应与配置恢复均经用户实际确认。
+- [1.7.1 发布记录](queries/release-1-7-1.md) — 主分支合并发布授权、版本核验及 Issue 文案确认约束。

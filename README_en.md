@@ -45,7 +45,7 @@ pi-weixin-bridge install
 Path selection notes:
 
 - **State directory**: where account credentials, session context and daemon logs live; defaults to `~/.pi-weixin-bridge`. Your choice is written to `~/.pi-weixin-bridge/config.json` and picked up automatically by every process (including daemon children)
-- **pi workspace**: the agent's read/write working area; defaults to `D:\pi_weixin_project` on Windows, `~/pi-weixin-project` elsewhere
+- **pi workspace**: defaults to `~/pi-weixin-project` for fresh installations; existing Windows configurations retain their old directory when it exists
 - Both directories are **probe-tested for writability** before installation; on POSIX the state dir is tightened to `700` and the account file to `600` (credentials unreadable by other users)
 
 ### CLI commands
@@ -53,6 +53,7 @@ Path selection notes:
 ```bash
 pi-weixin-bridge install     # one-line install (QR bind + background daemon + shortcuts)
 pi-weixin-bridge login       # QR login / re-bind WeChat
+pi-weixin-bridge config      # Configure paths, model, access, projects, file limits and budgets
 pi-weixin-bridge start       # run the bridge in the foreground (default)
 pi-weixin-bridge stop        # stop the background daemon
 pi-weixin-bridge status      # show background daemon status (pm2 list style table: restarts / CPU / memory / uptime)
@@ -107,26 +108,11 @@ pi-weixin-bridge daemon install-boot     # register a per-user logon scheduled t
 pi-weixin-bridge daemon uninstall-boot   # remove it
 ```
 
-### Hidden-window startup (no console popup, PowerShell)
+### Windows background shortcuts
 
-The daemon process carries `windowsHide`, so it has no console window of its own; the console you see at startup comes from the window that runs the start command. Starting hidden via PowerShell keeps everything invisible:
+`pi-weixin-bridge install` creates `start-pi-weixin-bridge.lnk` and `stop-pi-weixin-bridge.lnk` in the npm package directory. Double-click them to start or stop the daemon. The shortcuts run Node.js minimized, while daemon child processes hide their windows and preserves the state directory, workspace, model and pi configuration directory.
 
-```powershell
-# 1. Generate "double-click, no window" shortcuts (run once)
-powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
-
-# 2. Then just double-click the generated shortcuts (no console):
-#    start-pi-weixin-bridge.lnk  → start in background (daemon start)
-#    stop-pi-weixin-bridge.lnk   → stop (daemon stop)
-```
-
-You can also start hidden from the command line directly:
-
-```powershell
-powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-service.ps1
-```
-
-Script notes: `start-service.ps1` / `stop-service.ps1` call `daemon start/stop` via `Start-Process -WindowStyle Hidden`; `create-shortcuts.ps1` generates shortcuts that run those scripts with `powershell -WindowStyle Hidden` (the `.lnk` files are generated locally and gitignored).
+The CLI and application scripts run in Node.js without invoking PowerShell, cmd or bash. Windows shortcuts, process statistics and login tasks use pinned `winax@3.6.8` COM bindings for WMI and Task Scheduler. Windows installation requires Visual Studio 2022 C++ build tools and Python; a native build failure stops installation. Register login startup with `pi-weixin-bridge daemon install-boot`.
 
 ### Linux / WSL
 
@@ -148,14 +134,38 @@ pi-weixin-bridge install
 - On Linux the credentials file is tightened to `600` and the state dir to `700` automatically.
 - Note: WSL and Windows have different `~`, so the two sides keep independent accounts/state.
 
+## Platform support
+
+Windows, macOS and Linux use Node.js 22+ and global npm installation. Windows uses native Node.js COM bindings, supports package paths with spaces, and does not invoke PowerShell or cmd. macOS login startup uses a per-user LaunchAgent and system plutil; stop the existing daemon before daemon install-boot. The agent runs the supervisor directly and can be removed with daemon uninstall-boot. Linux startup requires an available systemd user session; daemon start itself also works without systemd.
+
+Fresh installs use ~/pi-weixin-project. Existing Windows configurations retain D:\pi_weixin_project when that directory exists. Explicit paths and environment variables retain priority. Register startup again after changing Node, package or configuration paths. CI checks Windows, macOS and Linux before permitting a release.
+
 ## Configuration
 
-Resolution priority: **environment variables > `~/.pi-weixin-bridge/config.json` (written by the install wizard) > platform defaults**.
+Resolution priority: **environment variables > `~/.pi-weixin-bridge/config.json` (written by install / config) > platform defaults**.
+
+Run `pi-weixin-bridge config` to choose a setting interactively, or `config model` to select a provider and default model from pi models.json. Configuration does not log in again or start the daemon automatically, and does not replace existing per-conversation model selections.
+
+```bash
+pi-weixin-bridge config help
+pi-weixin-bridge config show
+pi-weixin-bridge config models
+pi-weixin-bridge config model 1
+pi-weixin-bridge config get model
+pi-weixin-bridge config set budget.dailyTokens 100000
+pi-weixin-bridge config set budget.timeZone Asia/Shanghai
+pi-weixin-bridge config set maxFileBytes 20971520
+pi-weixin-bridge config unset budget.dailyTokens
+```
+
+Model numbers refer to the current `config models` list; full provider/model references are also accepted. `config set <key> <value>` and `config unset <key>` support model, stateDir, workspace, access, access.admins, access.allowFrom, access.permission, budget, budget.dailyTokens, budget.dailyCost, budget.timeZone, maxFileBytes, and projects. Use JSON for arrays and objects; interactive input avoids shell quoting differences. Invalid settings leave the saved configuration unchanged. Nested changes preserve sibling fields. Clearing admins or allowFrom keeps an empty list; removing access entirely restores full permissions for every contact.
+
+Restart the daemon after saving. Stop it before changing stateDir or workspace; existing credentials, sessions and tasks are not migrated. A new state directory needs an existing account or a new login. Register startup again after changing paths. `config show` displays saved settings and active environment overrides without provider secrets. When upgrading from 1.6.1 without a saved default model, run `config model` and then `daemon start`.
 
 | Variable | Default | Description |
 |---|---|---|
 | `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | State directory (account credentials, session context, daemon logs) |
-| `PI_WEIXIN_WORKSPACE` | Windows `D:\pi_weixin_project` / others `~/pi-weixin-project` | Working directory for pi sessions (the agent reads/writes files here) |
+| `PI_WEIXIN_WORKSPACE` | `~/pi-weixin-project` for fresh installs; existing Windows paths preserved | Working directory for pi sessions (the agent reads/writes files here) |
 
 `config.json` example (generated by `install`, editable by hand):
 

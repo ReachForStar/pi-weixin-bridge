@@ -40,12 +40,12 @@ npm install -g pi-weixin-bridge
 pi-weixin-bridge install
 ```
 
-`install` 会依次：① 交互式选择保存路径（状态目录 / pi 工作目录，回车用默认，可 `install --yes` 跳过询问）→ ② 显示二维码供微信扫码绑定（已有账号则跳过）→ ③ 读取 pi models.json，选择供应方和默认模型 → ④ 启动后台 daemon → ⑤ 生成 Windows 隐藏窗口快捷方式。非交互安装必须已有有效默认模型，或通过 PI_WEIXIN_MODEL 指定，仍会在未登录时显示二维码。
+`install` 会依次：① 交互式选择保存路径（状态目录 / pi 工作目录，回车用默认，可 `install --yes` 跳过询问）→ ② 显示二维码供微信扫码绑定（已有账号则跳过）→ ③ 读取 pi models.json，选择供应方和默认模型 → ④ 启动后台 daemon → ⑤ 生成 Windows 后台快捷方式。非交互安装必须已有有效默认模型，或通过 PI_WEIXIN_MODEL 指定，仍会在未登录时显示二维码。
 
 路径选择说明：
 
 - **状态目录**：账号凭据、会话上下文、后台日志的存放位置，默认 `~/.pi-weixin-bridge`；选择后写入 `~/.pi-weixin-bridge/config.json`，后续所有进程（含 daemon 子进程）自动生效
-- **pi 工作目录**：Agent 读写文件的工作区，Windows 默认 `D:\pi_weixin_project`，Linux 默认 `~/pi-weixin-project`
+- **pi 工作目录**：Agent 读写文件的工作区，新安装默认 `~/pi-weixin-project`，已有 Windows 配置且旧目录存在时保留 `D:\pi_weixin_project`
 - 安装时会**实际探针校验两个目录可写**；POSIX 下自动收紧权限（状态目录 `700`、账号文件 `600`，凭据不可被其他用户读取）
 
 ### CLI 命令
@@ -53,6 +53,7 @@ pi-weixin-bridge install
 ```bash
 pi-weixin-bridge install     # 一键安装（扫码绑定 + 后台 daemon + 快捷方式）
 pi-weixin-bridge login       # 扫码登录 / 重新绑定微信
+pi-weixin-bridge config      # 配置路径、模型、访问权限、项目、文件上限和预算
 pi-weixin-bridge start       # 前台运行桥接服务（默认）
 pi-weixin-bridge stop        # 停止后台 daemon
 pi-weixin-bridge status      # 查看后台 daemon 状态（pm2 list 风格表格：重启次数 / CPU / 内存 / 运行时长）
@@ -109,30 +110,34 @@ pi-weixin-bridge daemon stop      # 停止
 **开机自启（可选）**：
 
 ```bash
-pi-weixin-bridge daemon install-boot     # 注册每用户登录计划任务（免管理员、隐藏窗口）
+pi-weixin-bridge daemon install-boot     # 注册每用户登录计划任务（免管理员）
 pi-weixin-bridge daemon uninstall-boot   # 移除
 ```
 
-### 隐藏窗口启动（不弹终端框，PowerShell）
+### Windows 后台快捷方式
 
-daemon 进程本身带 `windowsHide`，无控制台窗口；启动时弹出的终端框来自运行启动命令的窗口。用 PowerShell 隐藏启动可全程无可见窗口：
+运行 `pi-weixin-bridge install` 会在 npm 包目录生成 `start-pi-weixin-bridge.lnk` 与 `stop-pi-weixin-bridge.lnk`，双击即可启动或停止后台。快捷方式以最小化方式运行 Node.js，后台子进程隐藏窗口，并保存状态目录、工作目录、模型和 pi 配置目录。
 
-```powershell
-# 1. 生成“双击无窗口”快捷方式（只需运行一次）
-powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
+CLI 与业务脚本使用 Node.js，不调用 PowerShell、cmd 或 bash。Windows 的快捷方式、进程统计和登录任务由固定版本 `winax@3.6.8` 调用 COM 接口执行；Windows 安装需要 Visual Studio 2022 C++ 构建工具及 Python，原生模块编译失败会终止安装。自启注册仍需运行 `pi-weixin-bridge daemon install-boot`。
 
-# 2. 之后双击生成的快捷方式即可（无终端框）：
-#    start-pi-weixin-bridge.lnk  → 后台启动（daemon start）
-#    stop-pi-weixin-bridge.lnk   → 停止（daemon stop）
+### Windows / macOS / Linux 适配
+
+三平台均使用 Node.js 22+ 和 npm 全局安装，首次运行 install 完成路径、微信登录和模型选择；后续通过 config 修改配置。新安装默认工作目录为 ~/pi-weixin-project；已有 Windows 配置且旧 D:\pi_weixin_project 存在时保留旧目录，显式路径与环境变量仍优先。
+
+- Windows：使用 Node.js 原生 COM 绑定，无需 PowerShell 或 cmd；支持含空格的 npm 包路径、最小化快捷方式与每用户登录计划任务。
+- macOS：后台进程及状态统计使用系统工具；登录自启保存至 ~/Library/LaunchAgents，通过系统 plutil 转换配置，直接运行前台 supervisor，由其管理桥接子进程。注册前先停止已有后台，避免重复实例。
+- Linux：后台不依赖 systemd；登录自启需要可用的 systemd 用户会话。无 systemd 的容器或 WSL 可使用 daemon start，前台托管可用 start。
+
+macOS 登录自启：
+
+```bash
+pi-weixin-bridge daemon stop
+pi-weixin-bridge daemon install-boot
+pi-weixin-bridge status
+pi-weixin-bridge daemon uninstall-boot
 ```
 
-也可直接命令行隐藏启动：
-
-```powershell
-powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-service.ps1
-```
-
-脚本说明：`start-service.ps1` / `stop-service.ps1` 以 `Start-Process -WindowStyle Hidden` 调用 `daemon start/stop`；`create-shortcuts.ps1` 生成以 `powershell -WindowStyle Hidden` 运行上述脚本的快捷方式（`.lnk` 为本机生成，已 gitignore）。
+自启依赖注册时的 Node、npm 包与配置路径；切换 Node 版本或修改路径后重新注册。三平台 CI 检查全部通过才允许 main 中的版本变化触发发布。
 
 ### Linux / WSL
 
@@ -156,16 +161,36 @@ pi-weixin-bridge install       # 选择路径、扫码和模型，随后启动�
 
 ## 配置
 
-配置解析优先级：**环境变量 > `~/.pi-weixin-bridge/config.json`（安装向导写入）> 平台默认**。
+配置解析优先级：**环境变量 > `~/.pi-weixin-bridge/config.json`（install / config 写入）> 平台默认**。
+
+运行 `pi-weixin-bridge config` 交互式选择配置项；`config model` 单独选择 models.json 中的供应方和默认模型。配置不重新扫码、不自动启动后台，不改变已有会话通过 `/model` 选择的模型。
+
+```bash
+pi-weixin-bridge config help
+pi-weixin-bridge config show
+pi-weixin-bridge config models
+pi-weixin-bridge config model 1
+pi-weixin-bridge config get model
+pi-weixin-bridge config set budget.dailyTokens 100000
+pi-weixin-bridge config set budget.timeZone Asia/Shanghai
+pi-weixin-bridge config set maxFileBytes 20971520
+pi-weixin-bridge config unset budget.dailyTokens
+```
+
+模型编号对应当次 `config models` 列表，也可传入完整供应方/模型引用。`config set <配置项> <值>` 与 `config unset <配置项>` 支持 `model`、`stateDir`、`workspace`、`access`、`access.admins`、`access.allowFrom`、`access.permission`、`budget`、`budget.dailyTokens`、`budget.dailyCost`、`budget.timeZone`、`maxFileBytes`、`projects`。数组和对象使用 JSON；建议在交互式 config 中输入 JSON，避免终端参数引号差异。
+
+配置保存前校验模型目录、权限、正数预算、时区、文件上限与项目结构，失败不改写原配置。修改嵌套项保留其他字段；`unset access.admins` 或 `unset access.allowFrom` 保留空列表，`unset access` 会恢复所有联系人完整权限，设置访问限制时必须配置管理员编号。
+
+保存后执行 `pi-weixin-bridge daemon restart`。修改状态目录或默认工作目录前必须 `daemon stop`；状态目录变更不会自动迁移旧账号、会话或任务，新目录需已有账号或重新登录，改路径后须重新注册自启。环境变量仍优先，可通过 `config show` 查看覆盖。从 1.6.1 升级后若提示未选择默认模型，运行 `config model`，再 `daemon start`。
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PI_WEIXIN_MODEL` | 安装时选择 | 默认模型引用，优先于 config.json |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi models.json 与鉴权配置目录 |
 | `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | 状态目录（账号凭据、会话上下文、daemon 日志） |
-| `PI_WEIXIN_WORKSPACE` | Windows `D:\pi_weixin_project` / 其他 `~/pi-weixin-project` | pi 会话的工作目录（Agent 在此读写文件） |
+| `PI_WEIXIN_WORKSPACE` | 新安装 `~/pi-weixin-project`；保留已有 Windows 旧目录 | pi 会话的工作目录（Agent 在此读写文件） |
 
-`config.json` 示例（由 `install` 向导生成，可手改）：
+`config.json` 示例（由 `install` / `config` 生成，可手改）：
 
 ```json
 { "stateDir": "D:\\data\\piwx", "workspace": "D:\\pi_weixin_project" }
@@ -230,7 +255,7 @@ test/                 # 单元测试（vitest）
 - ✅ 分级日志 + 错误分类（网络/鉴权/协议）+ 鉴权失效自动重登
 - ✅ context_token / typing ticket 持久化（重启恢复）
 - ✅ 斜杠命令（基本命令：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/reload` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
-- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / Linux systemd 用户服务）
+- ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / macOS LaunchAgent / Linux systemd 用户服务）
 - ✅ 跨平台（Windows / Linux / macOS），安装向导交互式选择保存路径 + 凭据权限加固（POSIX 700/600）
 - ⬜ 出站语音（需 silk 编码，未做）
 
@@ -351,7 +376,7 @@ npm run build       # 构建到 dist/
 
 CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）。推送到 `main` 后比较推送前后的 `package.json` 版本号，仅版本变化且检查通过时发布 npm 并创建 GitHub Release；版本不变和 PR 均不发布。发布前由维护者确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。npm 已发布的版本跳过上传，仍可补建缺失的 Release。
 
-后台 `status` 区分初始化、等待扫码、消息循环已启动与重启中。前台和后台桥接共享独占实例锁，重复启动拒绝；PID 文件损坏时明确报错。停止等待子进程结束，失败保留 PID 信息。Windows 自启使用绝对 PowerShell 路径，隐藏启动脚本等待启动结果并传播退出码；Linux unit 保存自定义路径并配置 ExecStop。实际系统注册需要在使用机器上执行。
+后台 `status` 区分初始化、等待扫码、消息循环已启动与重启中。前台和后台桥接共享独占实例锁，重复启动拒绝；PID 文件损坏时明确报错。停止等待子进程结束，失败保留 PID 信息。Windows 自启直接使用绝对 Node 路径，启动器等待结果并传播退出码；Linux unit 保存自定义路径并配置 ExecStop。实际系统注册需要在使用机器上执行。
 
 ## 故障排查
 

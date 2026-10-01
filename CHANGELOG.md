@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-10-01
+
+### Added
+
+- 完善 Windows、macOS、Linux 适配：增加 macOS LaunchAgent 自启，Windows 使用 Node 原生 COM 绑定调用 WMI 与任务计划程序接口，不调用 PowerShell 或 cmd，统一新安装默认目录，三平台 CI 验证。
+
+- 增加 pi-weixin-bridge config：交互配置与 show/get/set/unset/models/model，管理路径、默认模型、访问权限、项目、文件上限和日预算。
+
+### Fixed
+
+- Windows 快捷方式与登录任务直接运行 Node，支持包含空格和中文的 npm 安装路径，保存配置并传递退出码；npm 包不再包含 PowerShell 脚本，更新命令直接运行 npm JavaScript 入口。进程统计改用 WMI，修复 Windows CI 的默认测试超时。
+- Windows 登录自启使用实际进程账户 SID 和空 COM 密码参数，修复 0x8007052e 注册失败；中文快捷方式使用 Unicode 保存接口和短启动参数，避免文件名乱码与参数截断。
+- Windows 进程运行时间明确使用 UTC 转换，修复非 UTC 时区显示为 0 秒；CI 固定 windows-2022，安装时验证 winax 原生模块是否可用。
+- 配置写入前统一校验，使用临时文件原子替换；无效模型、权限、预算、时区或项目不改写原配置。
+- 修改路径前要求停止后台，显示环境变量覆盖与状态目录不迁移提示；升级后缺失默认模型可直接 config model 配置，无需重新扫码或完整安装。
+
+
 ## [1.7.0] - 2026-09-30
 
 ### Added
