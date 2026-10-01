@@ -51,3 +51,4 @@ updated: 2026-10-01
 - [用户登录后后台与微信验收输出](sources/windows-login-validation-output.md) — 登录后后台在线及普通消息回复的实际证据。
 - [Windows 进程运行时间时区错误](queries/windows-process-uptime-timezone.md) — VT_DATE 时区转换导致的零运行时间与真实进程验证。
 - [真实微信模型失败通知验收结果](sources/model-failure-validation-output.md) — 模型连接失败提示、后台继续响应与配置恢复均经用户实际确认。
+- [1.7.1 发布记录](queries/release-1-7-1.md) — 主分支合并发布授权、版本核验及 Issue 文案确认约束。
