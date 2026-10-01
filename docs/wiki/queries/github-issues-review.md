@@ -19,7 +19,7 @@ status: active
 
 ## 解法与验证边界
 
-开发分支已有上述对应机制，登录任务定义、默认目录及通知生命周期测试执行通过。后续实际注册成功，登录验收流程后的后台与普通微信回复正常；[模型连接失败通知](../sources/model-failure-validation-output.md)已由真实日志及用户微信确认验证，故障后的 /ping 和配置恢复后普通回复正常。1.7.1 未发布，该 Issue 不能因此视为已在 npm 用户环境解决。本次未发评论或关闭。
+修复已合并 main 并发布 1.7.1，登录任务定义、默认目录及通知生命周期测试执行通过。实际注册成功，登录验收流程后的后台与普通微信回复正常；[模型连接失败通知](../sources/model-failure-validation-output.md)已由真实日志及用户微信确认验证，故障后的 /ping 和配置恢复后普通回复正常。用户确认文案后已发送[回复](https://github.com/ReachForStar/pi-weixin-bridge/issues/1#issuecomment-5924328507)，保持 Issue 打开供报告者升级核验；发布结果见[1.7.1 记录](release-1-7-1.md)。
 
 ## 涉及模块与复发预防
 

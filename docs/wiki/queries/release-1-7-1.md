@@ -21,7 +21,7 @@ status: active
 
 正式 [Release v1.7.1](https://github.com/ReachForStar/pi-weixin-bridge/releases/tag/v1.7.1) 已创建，非草稿、非预发布，标签直接指向上述合并提交。npm 上传日志提示处理需要数分钟，初次 registry 返回 404、latest 为 1.7.0；后续通过官方 registry 强制在线核验确认 version 与 latest 均为 1.7.1，tarball 为 https://registry.npmjs.org/pi-weixin-bridge/-/pi-weixin-bridge-1.7.1.tgz 。未在本机执行全局更新或更改用户自启。
 
-按用户追加要求删除本地及远程 codex/reliability-version-release 分支。主分支在另一工作区检出，当前工作区保持主分支合并提交的 detached HEAD；发布结果知识记录提交到 main，版本不变，不再触发 npm 发布。Issue #1 的回复文案已准备，仍待用户确认，不自动发送或关闭。
+按用户追加要求删除本地及远程 codex/reliability-version-release 分支。主分支在另一工作区检出，当前工作区保持主分支合并提交的 detached HEAD；发布结果知识记录提交到 main，版本不变，不再触发 npm 发布。用户随后确认回复文案并明确暂不关闭 Issue，已发送[确认后的评论](https://github.com/ReachForStar/pi-weixin-bridge/issues/1#issuecomment-5924328507)，读回内容与批准文案一致，Issue 状态为 OPEN。
 
 ## 涉及模块
 
