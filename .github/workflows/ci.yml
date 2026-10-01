@@ -21,6 +21,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       changed: ${{ steps.version.outputs.changed }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [22]
@@ -37,7 +38,7 @@ jobs:
 
       - name: Install dependencies
         shell: node scripts/ci-run.mjs {0}
-        run: '{"npm": ["ci"]}'
+        run: '{"npm": ["ci", "--foreground-scripts"]}'
 
       - name: Type check
         shell: node scripts/ci-run.mjs {0}
