@@ -40,7 +40,7 @@ npm install -g pi-weixin-bridge
 pi-weixin-bridge install
 ```
 
-`install` 会依次：① 交互式选择保存路径（状态目录 / pi 工作目录，回车用默认，可 `install --yes` 跳过询问）→ ② 显示二维码供微信扫码绑定（已有账号则跳过）→ ③ 读取 pi models.json，选择供应方和默认模型 → ④ 启动后台 daemon → ⑤ 生成 Windows 隐藏窗口快捷方式。非交互安装必须已有有效默认模型，或通过 PI_WEIXIN_MODEL 指定，仍会在未登录时显示二维码。
+`install` 会依次：① 交互式选择保存路径（状态目录 / pi 工作目录，回车用默认，可 `install --yes` 跳过询问）→ ② 显示二维码供微信扫码绑定（已有账号则跳过）→ ③ 读取 pi models.json，选择供应方和默认模型 → ④ 启动后台 daemon → ⑤ 生成 Windows 后台快捷方式。非交互安装必须已有有效默认模型，或通过 PI_WEIXIN_MODEL 指定，仍会在未登录时显示二维码。
 
 路径选择说明：
 
@@ -110,36 +110,21 @@ pi-weixin-bridge daemon stop      # 停止
 **开机自启（可选）**：
 
 ```bash
-pi-weixin-bridge daemon install-boot     # 注册每用户登录计划任务（免管理员、隐藏窗口）
+pi-weixin-bridge daemon install-boot     # 注册每用户登录计划任务（免管理员）
 pi-weixin-bridge daemon uninstall-boot   # 移除
 ```
 
-### 隐藏窗口启动（不弹终端框，PowerShell）
+### Windows 后台快捷方式
 
-daemon 进程本身带 `windowsHide`，无控制台窗口；启动时弹出的终端框来自运行启动命令的窗口。用 PowerShell 隐藏启动可全程无可见窗口：
+运行 `pi-weixin-bridge install` 会在 npm 包目录生成 `start-pi-weixin-bridge.lnk` 与 `stop-pi-weixin-bridge.lnk`，双击即可启动或停止后台。快捷方式以最小化方式运行 Node.js，后台子进程隐藏窗口，并保存状态目录、工作目录、模型和 pi 配置目录。
 
-```powershell
-# 1. 生成“双击无窗口”快捷方式（只需运行一次）
-powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
-
-# 2. 之后双击生成的快捷方式即可（无终端框）：
-#    start-pi-weixin-bridge.lnk  → 后台启动（daemon start）
-#    stop-pi-weixin-bridge.lnk   → 停止（daemon stop）
-```
-
-也可直接命令行隐藏启动：
-
-```powershell
-powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-service.ps1
-```
-
-脚本说明：`start-service.ps1` / `stop-service.ps1` 以 `Start-Process -WindowStyle Hidden` 调用 `daemon start/stop`；`create-shortcuts.ps1` 生成以 `powershell -WindowStyle Hidden` 运行上述脚本的快捷方式（`.lnk` 为本机生成，已 gitignore）。
+CLI 与业务脚本使用 Node.js，不调用 PowerShell、cmd 或 bash。Windows 的快捷方式、进程统计和登录任务由 Node.js 原生 COM 绑定调用 WMI 和任务计划程序接口执行；Windows 安装需要可用的 Visual Studio C++ 构建工具及 Python，原生模块编译失败会终止安装。自启注册仍需运行 `pi-weixin-bridge daemon install-boot`。
 
 ### Windows / macOS / Linux 适配
 
 三平台均使用 Node.js 22+ 和 npm 全局安装，首次运行 install 完成路径、微信登录和模型选择；后续通过 config 修改配置。新安装默认工作目录为 ~/pi-weixin-project；已有 Windows 配置且旧 D:\pi_weixin_project 存在时保留旧目录，显式路径与环境变量仍优先。
 
-- Windows：使用系统自带 Windows PowerShell 5.1，不要求安装 pwsh；支持含空格的 npm 包路径、隐藏快捷方式与每用户登录计划任务。
+- Windows：使用 Node.js 原生 COM 绑定，无需 PowerShell 或 cmd；支持含空格的 npm 包路径、最小化快捷方式与每用户登录计划任务。
 - macOS：后台进程及状态统计使用系统工具；登录自启保存至 ~/Library/LaunchAgents，通过系统 plutil 转换配置，直接运行前台 supervisor，由其管理桥接子进程。注册前先停止已有后台，避免重复实例。
 - Linux：后台不依赖 systemd；登录自启需要可用的 systemd 用户会话。无 systemd 的容器或 WSL 可使用 daemon start，前台托管可用 start。
 
@@ -391,7 +376,7 @@ npm run build       # 构建到 dist/
 
 CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）。推送到 `main` 后比较推送前后的 `package.json` 版本号，仅版本变化且检查通过时发布 npm 并创建 GitHub Release；版本不变和 PR 均不发布。发布前由维护者确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。npm 已发布的版本跳过上传，仍可补建缺失的 Release。
 
-后台 `status` 区分初始化、等待扫码、消息循环已启动与重启中。前台和后台桥接共享独占实例锁，重复启动拒绝；PID 文件损坏时明确报错。停止等待子进程结束，失败保留 PID 信息。Windows 自启使用绝对 PowerShell 路径，隐藏启动脚本等待启动结果并传播退出码；Linux unit 保存自定义路径并配置 ExecStop。实际系统注册需要在使用机器上执行。
+后台 `status` 区分初始化、等待扫码、消息循环已启动与重启中。前台和后台桥接共享独占实例锁，重复启动拒绝；PID 文件损坏时明确报错。停止等待子进程结束，失败保留 PID 信息。Windows 自启直接使用绝对 Node 路径，启动器等待结果并传播退出码；Linux unit 保存自定义路径并配置 ExecStop。实际系统注册需要在使用机器上执行。
 
 ## 故障排查
 

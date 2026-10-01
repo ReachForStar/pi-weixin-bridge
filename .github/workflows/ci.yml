@@ -36,23 +36,28 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        shell: node scripts/ci-run.mjs {0}
+        run: '{"npm": ["ci"]}'
 
       - name: Type check
-        run: npm run typecheck
+        shell: node scripts/ci-run.mjs {0}
+        run: '{"npm": ["run", "typecheck"]}'
 
       - name: Unit tests
-        run: npm test
+        shell: node scripts/ci-run.mjs {0}
+        run: '{"npm": ["test"]}'
 
       - name: Build
-        run: npm run build
+        shell: node scripts/ci-run.mjs {0}
+        run: '{"npm": ["run", "build"]}'
 
       - name: Check version change
+        shell: node scripts/ci-run.mjs {0}
         id: version
         if: github.event_name == 'push'
         env:
           RELEASE_BASE: ${{ github.event.before }}
-        run: node scripts/release-version.mjs
+        run: '{"node": ["scripts/release-version.mjs"]}'
 
   # 新版本修改和推送前须由维护者确认，CI 仅在本次推送确实改变版本号时发布。
   publish:

@@ -4,8 +4,10 @@ type: query
 tags: [Windows, 安装, PowerShell]
 created: 2026-10-01
 updated: 2026-10-01
-status: active
+status: superseded
 ---
+
+当前机制见[终端无关运行机制](windows-shell-independence.md)，本页保留先前故障记录。
 
 ## 问题
 

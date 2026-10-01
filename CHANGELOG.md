@@ -8,13 +8,13 @@
 
 ### Added
 
-- 完善 Windows、macOS、Linux 适配：增加 macOS LaunchAgent 自启，Windows 不再依赖 pwsh，统一新安装默认目录，三平台 CI 验证。
+- 完善 Windows、macOS、Linux 适配：增加 macOS LaunchAgent 自启，Windows 使用 Node 原生 COM 绑定调用 WMI 与任务计划程序接口，不调用 PowerShell 或 cmd，统一新安装默认目录，三平台 CI 验证。
 
 - 增加 pi-weixin-bridge config：交互配置与 show/get/set/unset/models/model，管理路径、默认模型、访问权限、项目、文件上限和日预算。
 
 ### Fixed
 
-- Windows 创建快捷方式直接传递 PowerShell 参数，支持包含空格的 npm 安装路径；脚本异常与非零退出码终止安装，不再错误显示完成。
+- Windows 快捷方式与登录任务直接运行 Node，支持包含空格和中文的 npm 安装路径，保存配置并传递退出码；npm 包不再包含 PowerShell 脚本，更新命令直接运行 npm JavaScript 入口。进程统计改用 WMI，修复 Windows CI 的默认测试超时。
 - 配置写入前统一校验，使用临时文件原子替换；无效模型、权限、预算、时区或项目不改写原配置。
 - 修改路径前要求停止后台，显示环境变量覆盖与状态目录不迁移提示；升级后缺失默认模型可直接 config model 配置，无需重新扫码或完整安装。
 

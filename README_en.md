@@ -108,26 +108,11 @@ pi-weixin-bridge daemon install-boot     # register a per-user logon scheduled t
 pi-weixin-bridge daemon uninstall-boot   # remove it
 ```
 
-### Hidden-window startup (no console popup, PowerShell)
+### Windows background shortcuts
 
-The daemon process carries `windowsHide`, so it has no console window of its own; the console you see at startup comes from the window that runs the start command. Starting hidden via PowerShell keeps everything invisible:
+`pi-weixin-bridge install` creates `start-pi-weixin-bridge.lnk` and `stop-pi-weixin-bridge.lnk` in the npm package directory. Double-click them to start or stop the daemon. The shortcuts run Node.js minimized, while daemon child processes hide their windows and preserves the state directory, workspace, model and pi configuration directory.
 
-```powershell
-# 1. Generate "double-click, no window" shortcuts (run once)
-powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
-
-# 2. Then just double-click the generated shortcuts (no console):
-#    start-pi-weixin-bridge.lnk  → start in background (daemon start)
-#    stop-pi-weixin-bridge.lnk   → stop (daemon stop)
-```
-
-You can also start hidden from the command line directly:
-
-```powershell
-powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-service.ps1
-```
-
-Script notes: `start-service.ps1` / `stop-service.ps1` call `daemon start/stop` via `Start-Process -WindowStyle Hidden`; `create-shortcuts.ps1` generates shortcuts that run those scripts with `powershell -WindowStyle Hidden` (the `.lnk` files are generated locally and gitignored).
+The CLI and application scripts run in Node.js without invoking PowerShell, cmd or bash. Windows shortcuts, process statistics and login tasks use native Node.js COM bindings for WMI and Task Scheduler. Windows installation requires Visual Studio C++ build tools and Python; a native build failure stops installation. Register login startup with `pi-weixin-bridge daemon install-boot`.
 
 ### Linux / WSL
 
@@ -151,7 +136,7 @@ pi-weixin-bridge install
 
 ## Platform support
 
-Windows, macOS and Linux use Node.js 22+ and global npm installation. Windows uses built-in Windows PowerShell 5.1 and supports package paths with spaces; pwsh is not required. macOS login startup uses a per-user LaunchAgent and system plutil; stop the existing daemon before daemon install-boot. The agent runs the supervisor directly and can be removed with daemon uninstall-boot. Linux startup requires an available systemd user session; daemon start itself also works without systemd.
+Windows, macOS and Linux use Node.js 22+ and global npm installation. Windows uses native Node.js COM bindings, supports package paths with spaces, and does not invoke PowerShell or cmd. macOS login startup uses a per-user LaunchAgent and system plutil; stop the existing daemon before daemon install-boot. The agent runs the supervisor directly and can be removed with daemon uninstall-boot. Linux startup requires an available systemd user session; daemon start itself also works without systemd.
 
 Fresh installs use ~/pi-weixin-project. Existing Windows configurations retain D:\pi_weixin_project when that directory exists. Explicit paths and environment variables retain priority. Register startup again after changing Node, package or configuration paths. CI checks Windows, macOS and Linux before permitting a release.
 

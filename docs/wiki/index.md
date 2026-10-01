@@ -21,6 +21,7 @@ updated: 2026-10-01
 - [CLI 配置入口](entities/config-command.md) — 独立交互配置、模型选择、字段校验与生效边界。
 
 - [Windows macOS Linux 适配](entities/platform-support.md) — 系统工具、自启方式、旧路径兼容与三平台 CI。
+- [Windows 原生 COM 绑定](entities/windows-native-com.md) — 固定版本 winax、构建要求与原生模块安装校验。
 
 ## 概念 concepts
 
@@ -41,6 +42,5 @@ updated: 2026-10-01
 
 - [Windows 全局更新 EBUSY](queries/npm-global-install-ebusy.md) — 旧后台占用 npm 包目录与升级后模型配置要求。
 
-- [Windows 快捷方式脚本路径空格](queries/windows-shortcut-spaces.md) — npm 包路径空格、PowerShell 参数传递与失败退出。
-
-- [Windows 快捷方式脚本路径空格](queries/windows-shortcut-spaces.md) — npm 包路径空格、PowerShell 参数传递与失败退出。
+- [Windows 快捷方式脚本路径空格](queries/windows-shortcut-spaces.md) — 先前路径解析故障，已由终端无关机制取代。
+- [终端无关运行机制与 Windows CI](queries/windows-shell-independence.md) — Node 入口、Windows 原生接口与真实验证边界。

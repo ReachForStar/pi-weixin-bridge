@@ -1,9 +1,8 @@
-// 进程统计（pm2 list 风格）：cpu%（两次采样差值）/ 内存 / 运行时长，跨平台。
-// Windows 用系统 PowerShell，Linux 读 /proc，macOS 用 ps。零第三方依赖。
+// 使用平台原生进程统计，避免终端启动耗时影响采样。
 import { spawnSync } from "node:child_process";
 import { cpus } from "node:os";
 import { readFileSync } from "node:fs";
-import { windowsPowerShellPath } from "../platform.js";
+import { runWindowsHelper } from "../platform.js";
 
 export interface ProcStats {
   cpuPct: number;
@@ -19,17 +18,10 @@ interface Sample {
 }
 
 function sampleWindows(pid: number): Sample | null {
-  // 兼容 PowerShell 5.1（无 ToUnixTimeMilliseconds）：直接用 (Get-Date)-StartTime 算运行时长
-  const cmd =
-    `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue;` +
-    ` if ($p) { @{cpuSec=$p.CPU;memBytes=$p.WorkingSet64;uptimeSec=((Get-Date)-$p.StartTime).TotalSeconds} | ConvertTo-Json -Compress }`;
-  const r = spawnSync(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", cmd], { encoding: "utf8", timeout: 8000, windowsHide: true });
-  if (r.error) throw r.error;
-  if (r.status !== 0) throw new Error(`读取 Windows 进程统计失败：${r.stderr}`);
-  const line = (r.stdout ?? "").trim();
+  const line = runWindowsHelper(["stats", String(pid)]);
   if (!line) return null;
-  const { cpuSec, memBytes, uptimeSec } = JSON.parse(line) as Sample;
-  if (!Number.isFinite(cpuSec) || !Number.isFinite(memBytes) || !Number.isFinite(uptimeSec)) return null;
+  const [cpuSec, memBytes, uptimeSec] = line.split("\t").map(Number);
+  if (!Number.isFinite(cpuSec) || !Number.isFinite(memBytes) || !Number.isFinite(uptimeSec)) throw new Error("Windows 进程统计返回无效数据");
   return { cpuSec, memBytes, uptimeSec };
 }
 
@@ -96,13 +88,15 @@ export async function procStats(pid: number): Promise<ProcStats | null> {
         ? sampleLinux
         : sampleDarwin;
   const a = sample(pid);
+  const started = performance.now();
   if (!a) return null;
   // macOS ps 已返回 CPU 百分比，不能将两次百分比差值当作累计 CPU 时间。
   if (process.platform === "darwin") return { cpuPct: Math.max(0, a.cpuSec / cpus().length), memBytes: a.memBytes, uptimeSec: a.uptimeSec };
   await new Promise((r) => setTimeout(r, 500));
   const b = sample(pid);
   if (!b) return null;
-  const cpuPct = Math.max(0, ((b.cpuSec - a.cpuSec) / 0.5 / cpus().length) * 100);
+  const elapsed = (performance.now() - started) / 1000;
+  const cpuPct = Math.max(0, ((b.cpuSec - a.cpuSec) / elapsed / cpus().length) * 100);
   return { cpuPct, memBytes: b.memBytes, uptimeSec: Math.max(0, b.uptimeSec) };
 }
 

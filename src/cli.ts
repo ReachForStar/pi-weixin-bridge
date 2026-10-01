@@ -8,7 +8,8 @@ import { loginWithQR } from "./ilink/login.js";
 import { loadState, saveState } from "./account.js";
 import { runInstallWizard, runModelWizard } from "./wizard.js";
 import { runConfigCommand, printConfigHelp } from "./config-command.js";
-import { windowsPowerShellPath } from "./platform.js";
+import { runWindowsHelper } from "./platform.js";
+import { STATE_DIR, WORKSPACE, MODEL_REF } from "./config.js";
 import {
   BIN_PATH,
   BRIDGE_LOG_FILE,
@@ -22,8 +23,9 @@ import {
 import { installBootTask, uninstallBootTask } from "./daemon/boot.js";
 import { runSupervisor } from "./daemon/supervisor.js";
 import { procStats, renderStatusTable, type StatusRow } from "./daemon/procs.js";
+import { npmCommand } from "./npm-command.js";
 
-// 包根目录（src 的上级），用于定位 ps1 脚本与计划任务
+// 包根目录用于定位随 npm 分发的系统适配脚本。
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SHORTCUTS = ["start-pi-weixin-bridge.lnk", "stop-pi-weixin-bridge.lnk"];
 
@@ -115,25 +117,17 @@ async function login(): Promise<boolean> {
   }
 }
 
-/** 运行 create-shortcuts.ps1 生成隐藏窗口快捷方式（仅 Windows） */
+/** 使用系统脚本宿主生成隐藏启动快捷方式，不依赖终端配置。 */
 export function createShortcuts(packageRoot: string = PKG_ROOT): void {
   if (process.platform !== "win32") {
     console.log("（非 Windows 平台，跳过快捷方式；自启用 daemon install-boot）");
     return;
   }
-  const script = join(packageRoot, "create-shortcuts.ps1");
+  const script = join(packageRoot, "scripts", "windows-helper.js");
   if (!existsSync(script)) {
-    throw new Error("缺少 create-shortcuts.ps1，快捷方式创建失败；后台状态请用 status 查看");
+    throw new Error("缺少 windows-helper.js，快捷方式创建失败；后台状态请用 status 查看");
   }
-  const powershell = windowsPowerShellPath();
-  // 直接传入参数数组，避免 cmd 再次解析含空格的 npm 安装路径。
-  const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script], {
-    cwd: packageRoot,
-    stdio: "inherit",
-    windowsHide: true,
-    timeout: 30_000,
-  });
-  if (result.error || result.status !== 0) throw new Error("快捷方式创建失败；后台可能已运行，请用 status 查看", { cause: result.error ?? new Error(`PowerShell 退出码：${result.status}`) });
+  runWindowsHelper(["shortcuts", packageRoot, process.execPath, STATE_DIR, WORKSPACE, MODEL_REF, process.env.PI_CODING_AGENT_DIR ?? ""], script);
 }
 
 async function runDaemon(args: string[]): Promise<void> {
@@ -271,7 +265,8 @@ async function uninstall(): Promise<void> {
 
 /** 使用 npm 分发版本，更新前停止后台以避免正在运行的源码被替换。 */
 async function update(): Promise<void> {
-  const rootResult = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: process.platform === "win32", timeout: 30_000 });
+  const npm = npmCommand();
+  const rootResult = spawnSync(process.execPath, [npm, "root", "-g"], { encoding: "utf8", timeout: 30_000, windowsHide: true });
   if (rootResult.error || rootResult.status !== 0) throw new Error("无法获取 npm 全局安装目录，请检查 npm 是否可用");
   const globalRoot = rootResult.stdout.trim();
   const norm = (path: string) => path.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
@@ -280,8 +275,8 @@ async function update(): Promise<void> {
   }
   console.log("停止后台并从 npm 更新到最新版");
   await stopDaemon();
-  const result = spawnSync("npm", ["install", "-g", "pi-weixin-bridge@latest"], {
-    stdio: "inherit", shell: process.platform === "win32", timeout: 300_000, windowsHide: true,
+  const result = spawnSync(process.execPath, [npm, "install", "-g", "pi-weixin-bridge@latest"], {
+    stdio: "inherit", timeout: 300_000, windowsHide: true,
   });
   if (result.error || result.status !== 0) throw new Error("npm 更新失败，后台保持停止；修复安装后运行 daemon start");
   const started = await startDaemon();

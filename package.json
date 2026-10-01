@@ -13,8 +13,8 @@
   "files": [
     "bin",
     "src",
-    "scripts",
-    "*.ps1",
+    "scripts/*.mjs",
+    "scripts/windows-helper.js",
     "README.md",
     "README_en.md",
     "LICENSE",
@@ -22,6 +22,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
+    "postinstall": "node scripts/check-native.mjs",
     "start": "tsx src/index.ts",
     "build": "tsc",
     "serve": "node dist/index.js",
@@ -69,5 +70,8 @@
     "@types/qrcode-terminal": "^0.12.2",
     "typescript": "^5.8.0",
     "vitest": "^3.2.7"
+  },
+  "optionalDependencies": {
+    "winax": "3.6.8"
   }
 }

@@ -1,67 +1,26 @@
-// 开机自启（跨平台）：
-// - Windows：每用户登录计划任务（免管理员，隐藏窗口）
-// - Linux：systemd 用户服务（用户登录时启动；免 root）
-// 两者都在当前用户上下文运行，可正常读取用户主目录下的 pi 配置与账号凭据。
+// 自启在当前用户上下文运行，保持 pi 配置与账号凭据的访问权限。
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { STATE_DIR, WORKSPACE, MODEL_REF } from "../config.js";
 import { BIN_PATH, daemonStatus } from "./daemon.js";
-import { windowsPowerShellPath } from "../platform.js";
+import { runWindowsHelper, WINDOWS_HELPER } from "../platform.js";
 
 const TASK_NAME = "pi-weixin-bridge";
-const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-
-function runPowershell(script: string, args: string[]): { ok: boolean; output: string } {
-  const r = spawnSync(
-    windowsPowerShellPath(),
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, ...args],
-    { cwd: PKG_ROOT, encoding: "utf8", timeout: 60_000, windowsHide: true },
-  );
-  return {
-    ok: r.status === 0,
-    output: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim(),
-  };
-}
 
 // ---------- Windows：每用户登录计划任务 ----------
 
 /** 注册开机自启任务（已存在则覆盖） */
 function installBootWindows(): { ok: boolean; message: string } {
-  const script = join(PKG_ROOT, "scripts", "install-boot.ps1");
-  if (!existsSync(script)) {
-    return { ok: false, message: `未找到 ${script}` };
-  }
-  const ps1 = join(PKG_ROOT, "start-service.ps1");
-  if (!existsSync(ps1)) return { ok: false, message: "npm 包缺少 start-service.ps1，请重新安装" };
-  const execute = windowsPowerShellPath();
-  const quoted = (value: string) => {
-    if (/["\r\n\0]/.test(value)) throw new Error("自启路径或模型包含无效字符");
-    return '"' + value + '"';
-  };
-  const argument = ["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", quoted(ps1),
-    "-NodePath", quoted(process.execPath), "-StateDir", quoted(STATE_DIR), "-Workspace", quoted(WORKSPACE),
-    ...(MODEL_REF ? ["-ModelRef", quoted(MODEL_REF)] : []),
-    ...(process.env.PI_CODING_AGENT_DIR ? ["-AgentDir", quoted(process.env.PI_CODING_AGENT_DIR)] : [])].join(" ");
-  const r = runPowershell(script, [execute, argument]);
-  return {
-    ok: r.ok,
-    message: r.ok ? `已注册计划任务 ${TASK_NAME}（用户登录时隐藏启动）` : `注册失败: ${r.output}`,
-  };
+  if (!existsSync(WINDOWS_HELPER)) return { ok: false, message: "npm 包缺少 Windows 系统辅助脚本，请重新安装" };
+  runWindowsHelper(["task-install", process.execPath, BIN_PATH, "start", STATE_DIR, WORKSPACE, MODEL_REF, process.env.PI_CODING_AGENT_DIR ?? ""]);
+  return { ok: true, message: `已注册计划任务 ${TASK_NAME}（用户登录时隐藏启动，无需 PowerShell）` };
 }
 
 function uninstallBootWindows(): { ok: boolean; message: string } {
-  const script = join(PKG_ROOT, "scripts", "uninstall-boot.ps1");
-  if (!existsSync(script)) {
-    return { ok: false, message: `未找到 ${script}` };
-  }
-  const r = runPowershell(script, []);
-  return {
-    ok: r.ok || /not found|找不到|does not exist/i.test(r.output),
-    message: r.ok ? `已移除计划任务 ${TASK_NAME}` : `移除失败: ${r.output}`,
-  };
+  runWindowsHelper(["task-remove"]);
+  return { ok: true, message: `已移除计划任务 ${TASK_NAME}` };
 }
 
 // ---------- Linux：systemd 用户服务 ----------

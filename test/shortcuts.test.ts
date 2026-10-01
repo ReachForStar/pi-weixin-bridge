@@ -1,48 +1,68 @@
 import { describe, it, expect } from "vitest";
-import { copyFileSync, mkdirSync, mkdtempSync, existsSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { createShortcuts } from "../src/cli.js";
+import { runWindowsHelper } from "../src/platform.js";
 
-describe.skipIf(process.platform !== "win32")("真实 Windows 快捷方式", () => {
+describe.skipIf(process.platform !== "win32")("真实 Windows 系统接口", () => {
   function directory(): string {
     mkdirSync("tmp", { recursive: true });
-    return mkdtempSync(resolve("tmp", "Author Software shortcuts "));
+    return mkdtempSync(resolve("tmp", "Author Software 中文 shortcuts "));
   }
-
-  it("带空格目录中实际生成快捷方式并通过 COM 读取参数", () => {
+  function helper(root: string): string {
+    mkdirSync(join(root, "scripts"));
+    const file = join(root, "scripts", "windows-helper.js");
+    copyFileSync("scripts/windows-helper.js", file);
+    return file;
+  }
+  it("带空格与中文目录实际生成快捷方式并通过 COM 读取", () => {
     const root = directory();
-    for (const file of ["create-shortcuts.ps1", "start-service.ps1", "stop-service.ps1"]) copyFileSync(file, join(root, file));
+    const script = helper(root);
+    mkdirSync(join(root, "bin"));
+    copyFileSync("bin/pi-weixin-bridge.js", join(root, "bin", "pi-weixin-bridge.js"));
     createShortcuts(root);
-    for (const file of ["start-pi-weixin-bridge.lnk", "stop-pi-weixin-bridge.lnk"]) expect(existsSync(join(root, file))).toBe(true);
-    const inspect = join(root, "inspect-shortcuts.ps1");
-    writeFileSync(inspect, `$ErrorActionPreference = 'Stop'
-$shell = New-Object -ComObject WScript.Shell
-$items = @('start-pi-weixin-bridge.lnk', 'stop-pi-weixin-bridge.lnk') | ForEach-Object {
-    $shortcut = $shell.CreateShortcut((Join-Path $PSScriptRoot $_))
-    @{ target = $shortcut.TargetPath; arguments = $shortcut.Arguments; directory = $shortcut.WorkingDirectory }
-}
-ConvertTo-Json -InputObject $items -Compress
-`, "utf8");
-    const powershell = join(process.env.SystemRoot!, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-    const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", inspect], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
-    expect(result.status, result.stderr).toBe(0);
-    const shortcuts = JSON.parse(result.stdout);
-    for (const [index, file] of ["start-service.ps1", "stop-service.ps1"].entries()) {
-      expect(shortcuts[index].arguments).toContain(`-File "${join(root, file)}"`);
-      expect(shortcuts[index].directory.toLowerCase()).toBe(root.toLowerCase());
-      expect(shortcuts[index].target.toLowerCase()).toBe(powershell.toLowerCase());
+    for (const mode of ["start", "stop"]) {
+      const file = join(root, mode + "-pi-weixin-bridge.lnk");
+      expect(existsSync(file)).toBe(true);
+      const [target, args, working, style] = runWindowsHelper(["inspect-shortcut", file], script).split(/\r?\n/);
+      expect(target.toLowerCase()).toBe(process.execPath.toLowerCase());
+      expect(args).toContain('"' + script + '" run "' + process.execPath + '"');
+      expect(args).toContain('"' + join(root, "bin", "pi-weixin-bridge.js") + '" "' + mode + '"');
+      expect(working.toLowerCase()).toBe(root.toLowerCase());
+      expect(Number(style)).toBe(7);
     }
-  }, 30_000);
-
-  it("缺少实际启动脚本时传播 PowerShell 失败，不吞掉异常", () => {
+  }, 100_000);
+  it("缺少实际入口时传播系统接口失败", () => {
     const root = directory();
-    copyFileSync("create-shortcuts.ps1", join(root, "create-shortcuts.ps1"));
-    expect(() => createShortcuts(root)).toThrow("快捷方式创建失败");
+    helper(root);
+    expect(() => createShortcuts(root)).toThrow("Windows 系统工具执行失败");
     expect(existsSync(join(root, "start-pi-weixin-bridge.lnk"))).toBe(false);
-  }, 30_000);
-
+  }, 35_000);
   it("缺少打包脚本立即报错", () => {
-    expect(() => createShortcuts(directory())).toThrow("缺少 create-shortcuts.ps1");
+    expect(() => createShortcuts(directory())).toThrow("缺少 windows-helper.js");
   });
+  it("真实 COM 生成登录任务定义但不注册系统任务", () => {
+    const root = directory();
+    const script = helper(root);
+    const xml = runWindowsHelper(["task-preview", process.execPath, resolve("bin/pi-weixin-bridge.js"), "start", root, root, "provider/model", root], script);
+    const require = createRequire(resolve("node_modules/@earendil-works/pi-coding-agent/package.json"));
+    const { XMLParser } = require("fast-xml-parser");
+    const task = new XMLParser().parse(xml).Task;
+    expect(task.Triggers.LogonTrigger.UserId).toBeTruthy();
+    expect(task.Principals.Principal.LogonType).toBe("InteractiveToken");
+    expect(task.Actions.Exec.Command.toLowerCase()).toBe(process.execPath.toLowerCase());
+    expect(task.Actions.Exec.Arguments).toContain('"' + root + '"');
+    expect(task.Actions.Exec.Arguments).toContain('"provider/model"');
+    expect(task.Settings.ExecutionTimeLimit).toBe("PT0S");
+  }, 35_000);
+  it("隐藏启动真实 Node 子进程并传递配置与失败退出码", () => {
+    const root = directory();
+    const script = helper(root);
+    const entry = join(root, "inspect-env.cjs");
+    const result = join(root, "environment.json");
+    writeFileSync(entry, 'require("node:fs").writeFileSync(process.env.PI_WEIXIN_STATE_DIR + "/environment.json", JSON.stringify({ args: process.argv.slice(2), state: process.env.PI_WEIXIN_STATE_DIR, workspace: process.env.PI_WEIXIN_WORKSPACE, model: process.env.PI_WEIXIN_MODEL, agent: process.env.PI_CODING_AGENT_DIR })); process.exit(7);', "utf8");
+    expect(() => runWindowsHelper(["run", process.execPath, entry, "start", root, root, "provider/model", root], script)).toThrow("退出码 7");
+    expect(JSON.parse(readFileSync(result, "utf8"))).toEqual({ args: ["daemon", "start"], state: root, workspace: root, model: "provider/model", agent: root });
+  }, 35_000);
 });

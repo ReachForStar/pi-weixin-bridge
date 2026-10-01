@@ -126,3 +126,19 @@ Windows 156 项测试通过、2 项平台跳过，类型检查、构建、真实
 ## [2026-10-01] lint | 三平台 CI 全部通过
 
 Ubuntu、Windows、macOS 的类型检查、完整测试与构建全部成功，macOS 真实 plutil 往返验证通过。运行 36743737351，提交 c26523d，publish 跳过，1.7.1 不发布。见 [平台适配](entities/platform-support.md)。
+
+## [2026-10-01] fix | 改为终端无关的 Node 与系统接口
+
+移除运行时 PowerShell/cmd 调用，Windows 使用 WSH/WMI/任务计划程序 COM；更新 npm 入口、CI 执行器与文档。实现待批量验证，1.7.1 不发布。
+
+## [2026-10-01] query | 核验 winax 原生编译兼容性
+
+用户允许安装 `winax@3.6.9`；现有 VS2022 C++ 工具与 Python 已被 node-gyp 找到，但 V8 HolderV2 模板编译失败。可选依赖被 npm 移除，不能据 npm 成功退出判定安装完成。已增加 Windows postinstall 模块检查，3.6.8 源码不含此项 Electron 41 兼容改动，固定版本变更等待确认。
+
+## [2026-10-01] feat | 安装固定版本原生 COM 绑定
+
+用户确认改用 `winax@3.6.8`，在 Node 22.23.2、VS2022 C++ 工具及 Python 上编译成功。Windows 适配脚本由 Node 执行，不调用 WSH、PowerShell 或 cmd；登录任务定义、快捷方式与进程统计等待统一验证。
+
+## [2026-10-01] lint | 验证终端无关运行与原生接口
+
+本地 28 个测试文件、160 项测试通过，2 项按平台跳过；类型检查、构建、真实 CLI 帮助、npm 打包及 wiki 校验通过。已验证真实 WMI、中文和空格目录的快捷方式读回、COM 登录任务定义、配置参数和退出码，未注册或卸载系统任务。1.7.1 不发布，提交后核验三平台 CI。
