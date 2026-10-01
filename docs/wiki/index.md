@@ -46,3 +46,5 @@ updated: 2026-10-01
 - [终端无关运行机制与 Windows CI](queries/windows-shell-independence.md) — Node 入口、Windows 原生接口与真实验证边界。
 - [GitHub 已知问题检查](queries/github-issues-review.md) — Issue #1 的五项旧版本缺陷与当前开发分支对应机制。
 - [登录自启与模型失败通知验收](queries/login-notification-validation.md) — 真实系统登录、模型请求故障注入、通过判据和恢复方式。
+- [Windows 登录任务注册账户错误](queries/windows-task-logon-failure.md) — 实际注册失败、进程 SID 与空 COM 密码参数。
+- [用户 Windows 自启注册失败输出](sources/windows-task-registration-output.md) — 注册失败的终端证据与旧日志边界。

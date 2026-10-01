@@ -55,12 +55,14 @@ describe.skipIf(process.platform !== "win32")("真实 Windows 系统接口", () 
     const require = createRequire(resolve("node_modules/@earendil-works/pi-coding-agent/package.json"));
     const { XMLParser } = require("fast-xml-parser");
     const task = new XMLParser().parse(xml).Task;
-    expect(task.Triggers.LogonTrigger.UserId).toBeTruthy();
+    expect(task.Triggers.LogonTrigger.UserId).toMatch(/^S-1-\d+(?:-\d+)+$/);
+    expect(task.Principals.Principal.UserId).toBe(task.Triggers.LogonTrigger.UserId);
     expect(task.Principals.Principal.LogonType).toBe("InteractiveToken");
     expect(task.Actions.Exec.Command.toLowerCase()).toBe(process.execPath.toLowerCase());
     expect(task.Actions.Exec.Arguments).toContain('"' + root + '"');
     expect(task.Actions.Exec.Arguments).toContain('"provider/model"');
     expect(task.Settings.ExecutionTimeLimit).toBe("PT0S");
+    expect(runWindowsHelper(["task-validate", process.execPath, resolve("bin/pi-weixin-bridge.js"), "start", root, root, "provider/model", root], script)).toBe("登录任务定义已通过系统校验，未注册任务");
   }, 35_000);
   it("隐藏启动真实 Node 子进程并传递配置与失败退出码", () => {
     const root = directory();

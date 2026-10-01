@@ -30,7 +30,6 @@ try {
     process.exitCode = result.status ?? 1;
   } else {
     const winax = createRequire(import.meta.url)("winax");
-    const shell = new winax.Object("WScript.Shell");
     function readShortcut(file) {
       const application = new winax.Object("Shell.Application");
       const folder = application.NameSpace(dirname(file));
@@ -60,11 +59,16 @@ try {
         link.Save(file);
         if (!existsSync(file)) throw new Error("快捷方式未生成");
       }
-    } else if (operation === "task-preview" || operation === "task-install") {
+    } else if (operation === "task-preview" || operation === "task-install" || operation === "task-validate") {
       const service = new winax.Object("Schedule.Service");
       service.Connect();
       const task = service.NewTask(0);
-      const user = shell.ExpandEnvironmentStrings("%USERDOMAIN%\\%USERNAME%");
+      // 使用进程实际所有者的 SID，避免环境变量与 Microsoft 账户名称不一致。
+      const locator = new winax.Object("WbemScripting.SWbemLocator");
+      const wmi = locator.ConnectServer(".", "root\\cimv2");
+      const owner = wmi.Get('Win32_Process.Handle="' + process.pid + '"').ExecMethod_("GetOwnerSid");
+      const user = String(owner.Sid);
+      if (Number(owner.ReturnValue) !== 0 || !/^S-1-\d+(?:-\d+)+$/.test(user)) throw new Error("无法读取当前进程账户 SID");
       task.RegistrationInfo.Description = "pi-weixin-bridge";
       task.Principal.UserId = user;
       task.Principal.LogonType = 3;
@@ -81,7 +85,11 @@ try {
       action.Arguments = launcher(1);
       action.WorkingDirectory = dirname(dirname(script));
       if (operation === "task-preview") console.log(String(task.XmlText));
-      else service.GetFolder("\\").RegisterTaskDefinition("pi-weixin-bridge", task, 6, user, "", 3);
+      // 空字符串会成为密码值；交互登录任务传递空 VARIANT，不保存密码。
+      else {
+        service.GetFolder("\\").RegisterTaskDefinition("pi-weixin-bridge", task, operation === "task-validate" ? 1 : 6, user, null, 3);
+        if (operation === "task-validate") console.log("登录任务定义已通过系统校验，未注册任务");
+      }
     } else if (operation === "task-remove") {
       const service = new winax.Object("Schedule.Service");
       service.Connect();
