@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { copyFileSync, mkdirSync, mkdtempSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
+import { XMLParser } from "fast-xml-parser";
 import { createShortcuts } from "../src/cli.js";
 import { runWindowsHelper } from "../src/platform.js";
 
@@ -52,8 +52,7 @@ describe.skipIf(process.platform !== "win32")("真实 Windows 系统接口", () 
     const root = directory();
     const script = helper(root);
     const xml = runWindowsHelper(["task-preview", process.execPath, resolve("bin/pi-weixin-bridge.js"), "start", root, root, "provider/model", root], script);
-    const require = createRequire(resolve("node_modules/@earendil-works/pi-coding-agent/package.json"));
-    const { XMLParser } = require("fast-xml-parser");
+    // 用桥自己声明的 fast-xml-parser（pi 核心 1.4.0 起不再携带此传递依赖）
     const task = new XMLParser().parse(xml).Task;
     expect(task.Triggers.LogonTrigger.UserId).toMatch(/^S-1-\d+(?:-\d+)+$/);
     expect(task.Principals.Principal.UserId).toBe(task.Triggers.LogonTrigger.UserId);

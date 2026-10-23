@@ -69,6 +69,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/qrcode-terminal": "^0.12.2",
+    "fast-xml-parser": "^5.11.2",
     "typescript": "^5.8.0",
     "vitest": "^3.2.7"
   },
