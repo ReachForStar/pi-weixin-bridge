@@ -58,7 +58,7 @@
     "url": "https://github.com/ReachForStar/pi-weixin-bridge/issues"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.82.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
     "@firecrawl/anydoc": "0.2.4",
     "cron-parser": "5.10.1",
     "minisearch": "7.2.0",

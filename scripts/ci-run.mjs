@@ -5,7 +5,8 @@ import { spawnSync } from "node:child_process";
 
 const command = JSON.parse(readFileSync(process.argv[2], "utf8"));
 const root = dirname(process.execPath);
-const manifest = createRequire(process.execPath).resolve("npm/package.json", { paths: [root, join(root, "..", "lib")] });
+// 官方安装包：npm 在 <root>/../lib；Homebrew（分离 formula）：<prefix>/Cellar/node/<ver>/bin → <prefix>/lib。
+const manifest = createRequire(process.execPath).resolve("npm/package.json", { paths: [root, join(root, "..", "lib"), join(root, "..", "..", "..", "..", "lib")] });
 const args = command.npm ? [join(dirname(manifest), "bin", "npm-cli.js"), ...command.npm] : command.node;
 if (!Array.isArray(args) || !args.every((arg) => typeof arg === "string")) throw new Error("CI 命令参数无效");
 const result = spawnSync(process.execPath, args, { stdio: "inherit", windowsHide: true, timeout: 300_000 });
