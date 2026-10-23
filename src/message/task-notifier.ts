@@ -32,11 +32,8 @@ export class TaskNotifier {
 
   start(): void {
     if (this.closed || this.timer) return;
-    this.enqueue("⏳ 已收到消息，开始处理任务。");
-    this.timer = setInterval(() => {
-      const seconds = Math.floor((Date.now() - this.started) / 1000);
-      this.enqueue(`⏳ 任务仍在进行\n\n- 进度：${this.stage}\n- 已用时：${seconds} 秒\n- 已结束的工具调用：${this.completedTools} 次`);
-    }, this.intervalMs);
+    // typing 状态已承担“处理中”反馈（见 bridge.ts sendTypingSafe TYPING/CANCEL），
+    // 不再发送文本确认与周期性进度，避免每条任务多发两条消息（2026-10-23 用户要求）。
   }
 
   update(progress: TaskProgress): void {
