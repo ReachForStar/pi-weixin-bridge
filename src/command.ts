@@ -5,10 +5,14 @@
 import type { PiSessionManager } from "./pi/sessions.js";
 import { BRIDGE_VERSION, WORKSPACE } from "./config.js";
 import { listSkills, listMcpServers, skillDirective, mcpDirective } from "./catalog.js";
+import type { TaskInfo } from "./message/task-queue.js";
 
 export interface SlashContext {
   /** 会话 key（session_id 或 from_user_id） */
   key: string;
+  stop?: () => Promise<boolean>;
+  listTasks?: () => TaskInfo[];
+  cancelTask?: (id: string) => boolean;
 }
 
 const LIST_MAX = 100;
@@ -19,14 +23,27 @@ const HELP_TEXT = [
   "1. /help — 显示本帮助",
   "2. /status — 服务状态",
   "3. /new — 开始新对话",
-  "4. /model — 查看当前模型；/model list 列表；/model <provider/modelId> 切换",
+  "4. /model — 当前会话模型；/model list 查看 models.json；/model <编号或供应方/模型> 切换当前会话并保存",
   "5. /skill — skill 列表；/skill <名称> 下一条消息按该 skill 处理",
   "6. /mcp — MCP server 列表；/mcp <名称> 下一条消息调用其工具",
   "7. /reload — 重载模型配置（models.json 改动立即生效）",
   "8. /usage — 当前对话用量",
-  "9. /stop — 停止进行中的任务",
+  "9. /stop — 停止当前对话的任务（含附件处理和等待中的消息）",
   "10. /ping — 存活检查",
+  "11. /tasks — 查看当前对话正在处理和等待中的任务",
+  "12. /cancel <任务编号> — 取消指定任务，其余任务继续",
+  "13. /sessions — 当前项目历史；/resume <编号> 切换；/rename <名称> 命名；/export 导出 HTML",
+  "14. /files — 资料列表；/files find <关键词> 检索；/file <编号> 取回原件；/file <编号> markdown 取回转换结果",
+  "15. /ocr <文件编号> — 扫描文档云端 OCR，逐文件确认后上传 Firecrawl",
+  "16. /history — 持久任务记录；/result <编号> 查看结果；/retry <编号> 经确认后重新处理",
+  "17. /project — 查看项目；/project <名称> 切换配置的工作目录与工具权限",
+  "18. /schedule — 查看定时任务；/schedule pause|resume|delete <编号> 管理",
+  '19. /schedule add {"prompt":"任务指令","cron":"0 9 * * *","timeZone":"Asia/Shanghai"} — 周期任务',
+  '20. /schedule add {"prompt":"任务指令","at":"2026-10-01T09:00:00+08:00","timeZone":"Asia/Shanghai"} — 单次任务（使用未来日期）',
+  "21. /approve <编号> — 同意当前操作；/reject <编号> 拒绝；确认超时不执行",
+  "22. /daily — 今日已报告用量；/doctor — 只读本地诊断",
   "",
+  "权限：管理员可切换配置、创建定时任务和确认操作；白名单普通用户只读。文件回传限定当前项目目录。",
   "其他消息直接发给 pi 处理。",
 ].join("\n");
 
@@ -65,7 +82,7 @@ export class SlashCommandHandler {
         case "/new":
           return await this.newSession(ctx.key);
         case "/model":
-          return this.modelCommand(trimmed);
+          return this.modelCommand(trimmed, ctx.key);
         case "/skill":
           return this.skillCommand(trimmed, ctx.key);
         case "/mcp":
@@ -75,9 +92,18 @@ export class SlashCommandHandler {
         case "/usage":
           return this.usage(ctx.key);
         case "/stop":
-          return await this.stop(ctx.key);
+          return await this.stop(ctx);
         case "/ping":
           return "🏓 pong";
+        case "/tasks":
+          return this.tasks(ctx);
+        case "/cancel": {
+          const id = trimmed.slice("/cancel".length).trim();
+          if (!id) return "用法：/cancel <任务编号>，用 /tasks 查看编号。";
+          if (!ctx.cancelTask) return "当前没有可取消的任务。";
+          return ctx.cancelTask(id) ? `⏹ 已请求取消任务 ${id}，其余任务继续。`
+            : "当前对话未找到该任务，可能已经结束；用 /tasks 查看。";
+        }
         default:
           return null; // 未知命令交给 pi
       }
@@ -87,15 +113,15 @@ export class SlashCommandHandler {
   }
 
   /** /model 查看 / 切换 / 列表 */
-  private async modelCommand(text: string): Promise<string> {
+  private async modelCommand(text: string, key: string): Promise<string> {
     const arg = text.trim().slice("/model".length).trim();
     if (!arg) {
-      return `当前模型：${this.pi.getModelRef()}`;
+      return `当前模型：${this.pi.getSessionModelRef(key)}`;
     }
     if (arg.toLowerCase() === "list") {
       return await this.pi.listModels();
     }
-    return await this.pi.switchModel(arg);
+    return await this.pi.switchSessionModel(key, arg);
   }
 
   /** /skill 列表 / 设置下一条消息的 skill 指令 */
@@ -172,10 +198,24 @@ export class SlashCommandHandler {
     return lines.join("\n");
   }
 
+  private tasks(ctx: SlashContext): string {
+    const tasks = ctx.listTasks?.() ?? [];
+    if (!tasks.length) return "当前对话没有正在处理或等待中的任务。";
+    const labels = { queued: "等待中", running: "处理中", stopping: "停止中" };
+    const lines = [`📋 当前对话任务（${tasks.length}）`, ""];
+    for (const task of tasks.slice(0, 20)) {
+      const seconds = Math.floor((Date.now() - (task.startedAt ?? task.createdAt)) / 1000);
+      lines.push(`- ${task.id.slice(0, 8)} · ${labels[task.state]} · ${seconds} 秒 · ${task.description}`);
+    }
+    if (tasks.length > 20) lines.push(`- 另有 ${tasks.length - 20} 条任务`);
+    lines.push("", "使用 /cancel <任务编号> 取消一条，/stop 停止全部。");
+    return lines.join("\n");
+  }
+
   /** /stop 中断该对话进行中的任务 */
-  private async stop(key: string): Promise<string> {
-    const ok = await this.pi.interrupt(key);
-    return ok ? "⏹ 已停止当前进行中的任务。" : "当前没有进行中的任务。";
+  private async stop(ctx: SlashContext): Promise<string> {
+    const ok = await (ctx.stop ? ctx.stop() : this.pi.interrupt(ctx.key));
+    return ok ? "⏹ 已请求停止当前对话的任务和等待中的消息。" : "当前没有进行中的任务。";
   }
 
   private async newSession(key: string): Promise<string> {

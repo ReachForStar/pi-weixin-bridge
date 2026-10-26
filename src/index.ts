@@ -8,6 +8,9 @@ import { loadState, saveState, waitForAccountChange } from "./account.js";
 import { PiSessionManager } from "./pi/sessions.js";
 import { Bridge } from "./bridge.js";
 import { logger } from "./logger/index.js";
+import { mkdirSync } from "node:fs";
+import { acquireProcessLock } from "./daemon/process-lock.js";
+import { scopeId, saveJson } from "./features/state.js";
 
 /** 退出信号是否已触发（区分“信号导致的等待中断”与真正的致命错误） */
 let shuttingDown = false;
@@ -24,6 +27,7 @@ async function waitForHeadlessLogin(
   prev: AccountState | null,
   signal: AbortSignal,
 ): Promise<AccountState> {
+  saveJson(join(STATE_DIR, "daemon", "runtime.json"), { state: "waiting-login", pid: process.pid, updatedAt: Date.now() });
   logger.warn(
     "[main] 后台模式无法扫码。请在终端运行 `pi-weixin-bridge login` 重新扫码，扫码完成后服务自动恢复（后台等待中...）",
   );
@@ -33,16 +37,8 @@ async function waitForHeadlessLogin(
 }
 
 async function main(): Promise<void> {
-  const pi = new PiSessionManager();
-  logger.info("[main] 初始化 pi 会话管理器...");
-  await pi.init();
-
-  // context_token / typing ticket 持久化（重启可恢复，支持主动推送）
-  const contextStore = new ContextStore(join(STATE_DIR, "context.json"));
-
-  // 后台模式（daemon 拉起 / 非 TTY）：会话过期时不交互扫码，改为等待终端重扫
-  const headless = process.env.PI_WEIXIN_HEADLESS === "1" || !process.stdout.isTTY;
-
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+  const release = acquireProcessLock(join(STATE_DIR, "instance.pid"));
   const controller = new AbortController();
   const shutdown = () => {
     shuttingDown = true;
@@ -51,6 +47,17 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+  const pi = new PiSessionManager();
+  try {
+  saveJson(join(STATE_DIR, "daemon", "runtime.json"), { state: "initializing", pid: process.pid, updatedAt: Date.now() });
+  logger.info("[main] 初始化 pi 会话管理器...");
+  await pi.init();
+
+  // context_token / typing ticket 持久化（重启可恢复，支持主动推送）
+
+  // 后台模式（daemon 拉起 / 非 TTY）：会话过期时不交互扫码，改为等待终端重扫
+  const headless = process.env.PI_WEIXIN_HEADLESS === "1" || !process.stdout.isTTY;
+
 
   let state = loadState();
   const client = new IlinkClient(state?.baseUrl ?? CONFIG.fixedBaseUrl, state?.botToken);
@@ -65,9 +72,10 @@ async function main(): Promise<void> {
   client.setToken(state.botToken);
   client.setBaseUrl(state.baseUrl);
 
-  try {
     while (!controller.signal.aborted) {
       try {
+        const contextStore = new ContextStore(join(STATE_DIR, "contexts", `${scopeId(state.accountId)}.json`));
+        saveJson(join(STATE_DIR, "daemon", "runtime.json"), { state: "running", pid: process.pid, updatedAt: Date.now() });
         const bridge = new Bridge(client, pi, contextStore, state.accountId);
         await bridge.run(controller.signal);
         break; // 正常退出（被 abort）
@@ -89,7 +97,12 @@ async function main(): Promise<void> {
       }
     }
   } finally {
+    controller.abort();
     pi.dispose();
+    process.removeListener("SIGINT", shutdown);
+    process.removeListener("SIGTERM", shutdown);
+    try { saveJson(join(STATE_DIR, "daemon", "runtime.json"), { state: "stopped", pid: process.pid, updatedAt: Date.now() }); }
+    finally { release(); }
     logger.info("[main] 已退出。");
   }
 }

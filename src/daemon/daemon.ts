@@ -1,5 +1,5 @@
 // 内置后台 daemon 控制端：拉起/停止 supervisor 进程树、PID 与日志管理。
-// 零第三方依赖（替代 PM2 硬依赖）：PID/日志全部落在 STATE_DIR，npx 临时目录被清理也不受影响。
+// 零第三方依赖（替代 PM2 硬依赖）：PID/日志全部落在 STATE_DIR，后台入口来自 npm 安装路径。
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -8,11 +8,14 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  closeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_DIR } from "../config.js";
 import { hardenStateDir } from "../account.js";
+import { readProcessId } from "./process-lock.js";
+import { setTimeout as delay } from "node:timers/promises";
 
 /** 包根目录（src/daemon 的上两级） */
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -45,14 +48,14 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
-function sleepMs(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+export function readPidOrNull(file: string): number | null {
+  return readProcessId(file);
 }
 
-export function readPidOrNull(file: string): number | null {
-  if (!existsSync(file)) return null;
-  const n = Number.parseInt(readFileSync(file, "utf8").trim(), 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
+export function readRuntimeStatus(): { state: string; pid: number } | undefined {
+  const file = join(DAEMON_DIR, "runtime.json");
+  if (!existsSync(file)) return undefined;
+  return JSON.parse(readFileSync(file, "utf8")) as { state: string; pid: number };
 }
 
 export interface DaemonStatus {
@@ -87,11 +90,14 @@ export function daemonStatus(): DaemonStatus {
  * 拉起 supervisor（后台常驻）：detached + windowsHide，stdio 全部重定向到 supervisor.log。
  * POSIX 上 detached 使其成为进程组组长，stop 时可整组 kill；Windows 上用 taskkill /t 杀树。
  */
-export function startDaemon(): { ok: boolean; message: string } {
+export async function startDaemon(): Promise<{ ok: boolean; message: string }> {
   const st = daemonStatus();
   if (st.running) {
-    return { ok: true, message: `已在运行（supervisor pid ${st.supervisorPid}），无需重复启动` };
+    const runtime = readRuntimeStatus();
+    return { ok: true, message: `守护进程已运行（pid ${st.supervisorPid}），桥接状态：${runtime && runtime.pid === st.bridgePid ? runtime.state : "启动或重启中"}；status 和 daemon logs 查看详情` };
   }
+  const instance = readProcessId(join(STATE_DIR, "instance.pid"));
+  if (instance && isPidAlive(instance)) return { ok: false, message: `已有桥接实例运行（pid ${instance}），请先停止该实例` };
   if (!existsSync(BIN_PATH)) {
     return { ok: false, message: `未找到入口 ${BIN_PATH}` };
   }
@@ -105,31 +111,37 @@ export function startDaemon(): { ok: boolean; message: string } {
     stdio: ["ignore", fd, fd],
   });
   child.unref();
-  child.on("error", () => {
-    // spawn 失败（如 node 不存在）时避免未处理的 error 事件
-  });
+  closeSync(fd);
+  let spawnError: Error | undefined;
+  child.on("error", (error) => { spawnError = error; });
 
   // 等 supervisor 启动并写入 supervisor.pid（tsx 加载较慢，上限 10s；进程若已退出则提前失败）
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     const s = daemonStatus();
-    if (s.running) return { ok: true, message: `已启动（supervisor pid ${s.supervisorPid}）` };
-    if (child.exitCode !== null) break;
-    sleepMs(100);
+    const runtime = readRuntimeStatus();
+    if (s.running && s.bridgePid && runtime?.pid === s.bridgePid) {
+      if (runtime.state === "running") return { ok: true, message: `已启动（supervisor pid ${s.supervisorPid}，桥接 pid ${s.bridgePid}），消息循环已启动` };
+      if (runtime.state === "waiting-login") return { ok: true, message: "后台已启动，正在等待登录；请运行 pi-weixin-bridge login 扫码" };
+    }
+    if (spawnError || child.exitCode !== null || child.signalCode !== null) break;
+    await delay(100);
   }
-  return { ok: false, message: `启动失败，请查看 ${SUPERVISOR_LOG_FILE}` };
+  return { ok: false, message: `桥接未就绪${spawnError ? `：${spawnError.message}` : ""}，请查看 ${BRIDGE_LOG_FILE} 和 ${SUPERVISOR_LOG_FILE}；守护进程可能仍在启动或重试` };
 }
 
 /** 杀掉 supervisor 及其子进程树 */
-function killProcessTree(pid: number): void {
+export function killProcessTree(pid: number, force = true): void {
   if (process.platform === "win32") {
-    spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore" });
+    const result = spawnSync("taskkill", ["/pid", String(pid), "/t", ...(force ? ["/f"] : [])], { stdio: "ignore", windowsHide: true, timeout: 10_000 });
+    if (result.error) throw result.error;
+    if (result.status !== 0 && isPidAlive(pid)) throw new Error(`无法停止进程 ${pid}`);
   } else {
     try {
-      process.kill(-pid, "SIGTERM"); // 进程组（supervisor 是组长）
+      process.kill(-pid, force ? "SIGKILL" : "SIGTERM");
     } catch {
       try {
-        process.kill(pid, "SIGTERM");
+        process.kill(pid, force ? "SIGKILL" : "SIGTERM");
       } catch {
         // 已退出
       }
@@ -138,16 +150,27 @@ function killProcessTree(pid: number): void {
 }
 
 /** 停止 daemon：杀进程树并清理残留 PID 文件 */
-export function stopDaemon(): { stopped: boolean } {
+export async function stopDaemon(): Promise<{ stopped: boolean }> {
   const st = daemonStatus();
   if (!st.running) {
+    const orphan = readPidOrNull(BRIDGE_PID_FILE);
+    if (orphan && isPidAlive(orphan)) {
+      killProcessTree(orphan);
+      await delay(100);
+      if (isPidAlive(orphan)) throw new Error(`桥接进程 ${orphan} 未能停止，保留 PID 文件`);
+      cleanupStalePids();
+      return { stopped: true };
+    }
     cleanupStalePids();
     return { stopped: false };
   }
-  killProcessTree(st.supervisorPid!);
+  killProcessTree(st.supervisorPid!, process.platform === "win32");
   const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline && isPidAlive(st.supervisorPid!)) sleepMs(100);
+  while (Date.now() < deadline && isPidAlive(st.supervisorPid!)) await delay(100);
   if (isPidAlive(st.supervisorPid!)) killProcessTree(st.supervisorPid!);
+  const finalDeadline = Date.now() + 5_000;
+  while (Date.now() < finalDeadline && (isPidAlive(st.supervisorPid!) || (st.bridgePid && isPidAlive(st.bridgePid)))) await delay(100);
+  if (isPidAlive(st.supervisorPid!) || (st.bridgePid && isPidAlive(st.bridgePid))) throw new Error("后台进程未能停止，保留 PID 文件供排查");
   cleanupStalePids();
   return { stopped: true };
 }

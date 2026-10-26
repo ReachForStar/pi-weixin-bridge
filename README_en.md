@@ -13,19 +13,14 @@ Message ClawBot in WeChat and pi handles it and replies — bringing pi's full c
 
 ## Architecture
 
-```
-ClawBot in the WeChat app
-      ↕  iLink protocol (HTTPS, ilinkai.weixin.qq.com)
-┌──────────────────────────────────┐
-│  pi-weixin-bridge (this service)  │
-│  ① QR login → bot_token           │
-│  ② long-poll getUpdates (receive) │
-│  ③ download & decrypt inbound media│
-│  ④ message + image → pi prompt     │
-│  ⑤ pi reply (text / image) → send  │
-└──────────────────────────────────┘
-      ↕  in-process call (SDK)
-   pi AgentSession
+```mermaid
+flowchart TD
+  WeChat -->|iLink HTTPS| Bridge
+  Bridge --> Documents
+  Documents --> AgentSession
+  Bridge --> AgentSession
+  AgentSession -->|text and files| Bridge
+  Bridge --> WeChat
 ```
 
 The protocol is based on Tencent's official open-source repo [`Tencent/openclaw-weixin`](https://github.com/Tencent/openclaw-weixin) (this service strips out the OpenClaw dependency and keeps only the iLink client).
@@ -41,17 +36,16 @@ The protocol is based on Tencent's official open-source repo [`Tencent/openclaw-
 ### One-line install (recommended, mirrors openclaw-weixin-cli)
 
 ```bash
-npx -y pi-weixin-bridge install
-# Or install from the git source (includes the latest unpublished changes):
-npx -y github:ReachForStar/pi-weixin-bridge install
+npm install -g pi-weixin-bridge
+pi-weixin-bridge install
 ```
 
-`install` will: ① interactively choose save paths (state dir / pi workspace; Enter for defaults, or `install --yes` to skip prompts) → ② show a QR code for WeChat binding (skipped if an account already exists) → ③ start the built-in background daemon (auto-restart on crash, zero third-party deps) → ④ generate hidden-window start/stop shortcuts (Windows only).
+`install` will: ① interactively choose save paths (state dir / pi workspace; Enter for defaults, or `install --yes` to skip prompts) → ② show a QR code for WeChat binding (skipped if an account already exists) → ③ select a provider and default model from models.json → ④ start the daemon → ⑤ create Windows shortcuts. Non-interactive installation needs an existing default or PI_WEIXIN_MODEL; QR login is still required when no account is saved.
 
 Path selection notes:
 
 - **State directory**: where account credentials, session context and daemon logs live; defaults to `~/.pi-weixin-bridge`. Your choice is written to `~/.pi-weixin-bridge/config.json` and picked up automatically by every process (including daemon children)
-- **pi workspace**: the agent's read/write working area; defaults to `D:\pi_weixin_project` on Windows, `~/pi-weixin-project` elsewhere
+- **pi workspace**: defaults to `~/pi-weixin-project` for fresh installations; existing Windows configurations retain their old directory when it exists
 - Both directories are **probe-tested for writability** before installation; on POSIX the state dir is tightened to `700` and the account file to `600` (credentials unreadable by other users)
 
 ### CLI commands
@@ -59,53 +53,33 @@ Path selection notes:
 ```bash
 pi-weixin-bridge install     # one-line install (QR bind + background daemon + shortcuts)
 pi-weixin-bridge login       # QR login / re-bind WeChat
+pi-weixin-bridge config      # Configure paths, model, access, projects, file limits and budgets
 pi-weixin-bridge start       # run the bridge in the foreground (default)
 pi-weixin-bridge stop        # stop the background daemon
 pi-weixin-bridge status      # show background daemon status (pm2 list style table: restarts / CPU / memory / uptime)
 pi-weixin-bridge daemon      # daemon management: start/stop/status/restart/logs/install-boot/uninstall-boot
-pi-weixin-bridge update      # update to latest (global install: npm registry + restart; git install: pull + install + restart; npx: re-run install)
+pi-weixin-bridge update      # update from npm and restart the daemon
 pi-weixin-bridge uninstall   # uninstall (stop service, remove boot task & shortcuts, keep account)
 pi-weixin-bridge help        # help
 ```
 
-### Manual install (clone the source)
+### npm updates and removal
 
 ```bash
-git clone https://github.com/ReachForStar/pi-weixin-bridge.git
-cd pi-weixin-bridge
-npm install
-
-# Start (shows a QR code on first run; scan with WeChat to connect)
-npm start
+pi-weixin-bridge update
+pi-weixin-bridge uninstall
+npm uninstall -g pi-weixin-bridge
 ```
 
-First run: a QR code appears in the terminal → scan with WeChat → confirmed → connected. Account credentials are saved to `~/.pi-weixin-bridge/account.json` and reused on restart, so you don't need to re-scan (it will ask to re-scan automatically when the session expires).
-
-### Run directly via npx
-
-The package is published on [npm](https://www.npmjs.com/package/pi-weixin-bridge) with a `bin` entry (runs the TS source via `tsx/esm/api`, no build step), so you can run it directly with npx:
-
-```bash
-# Run directly from npm (QR login required on first run)
-npx -y pi-weixin-bridge
-
-# Or install globally and use the command
-npm install -g pi-weixin-bridge
-pi-weixin-bridge
-
-# Or run from the git source (includes the latest unpublished changes)
-npx -y github:ReachForStar/pi-weixin-bridge
-```
-
-> npx is great for temporary runs / testing; for a long-running background service, the built-in daemon below is recommended (auto-restart, logs, start-on-boot).
+GitHub hosts source and CI. Install released packages from npm. Updates stop the daemon before replacing the package; failed installs leave it stopped. Account and local settings remain after removal.
 
 ### Background daemon deployment (built-in, recommended)
 
-> Important: a background process cannot scan a QR code, so you must **log in interactively once first** (`npm start`, scan, credentials saved to disk), then start the daemon.
+> Important: a background process cannot scan a QR code, so you must **log in interactively once first** (`pi-weixin-bridge install`, scan and select a model), then start the daemon.
 
 ```bash
-# 1. First interactive login (scan, then Ctrl+C to exit — the account is saved)
-npm start
+# 1. Install, scan and select the default model
+pi-weixin-bridge install
 
 # 2. Start the background daemon (a supervisor keeps it alive: auto-restart on crash, exponential backoff, log rotation)
 pi-weixin-bridge daemon start
@@ -115,7 +89,7 @@ pi-weixin-bridge daemon restart   # restart
 pi-weixin-bridge daemon stop      # stop
 ```
 
-The built-in daemon has zero third-party dependencies, and PID/logs live in `~/.pi-weixin-bridge/daemon/` (unaffected by npx temp-dir cleanup), cross-platform (Windows/POSIX).
+The built-in daemon has zero third-party dependencies, and PID/logs live in `~/.pi-weixin-bridge/daemon/` (restart and boot require the npm package and Node paths to exist), cross-platform (Windows/POSIX).
 
 > **Previously running under PM2?** PM2 configuration is no longer shipped as of 1.6.0. First stop the old process with `pm2 stop pi-weixin-bridge` (to avoid two instances polling the same account), then start with `pi-weixin-bridge daemon start`.
 
@@ -134,37 +108,19 @@ pi-weixin-bridge daemon install-boot     # register a per-user logon scheduled t
 pi-weixin-bridge daemon uninstall-boot   # remove it
 ```
 
-### Hidden-window startup (no console popup, PowerShell)
+### Windows background shortcuts
 
-The daemon process carries `windowsHide`, so it has no console window of its own; the console you see at startup comes from the window that runs the start command. Starting hidden via PowerShell keeps everything invisible:
+`pi-weixin-bridge install` creates `start-pi-weixin-bridge.lnk` and `stop-pi-weixin-bridge.lnk` in the npm package directory. Double-click them to start or stop the daemon. The shortcuts run Node.js minimized, while daemon child processes hide their windows and preserves the state directory, workspace, model and pi configuration directory.
 
-```powershell
-# 1. Generate "double-click, no window" shortcuts (run once)
-powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
-
-# 2. Then just double-click the generated shortcuts (no console):
-#    start-pi-weixin-bridge.lnk  → start in background (daemon start)
-#    stop-pi-weixin-bridge.lnk   → stop (daemon stop)
-```
-
-You can also start hidden from the command line directly:
-
-```powershell
-powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File start-service.ps1
-```
-
-Script notes: `start-service.ps1` / `stop-service.ps1` call `daemon start/stop` via `Start-Process -WindowStyle Hidden`; `create-shortcuts.ps1` generates shortcuts that run those scripts with `powershell -WindowStyle Hidden` (the `.lnk` files are generated locally and gitignored).
+The CLI and application scripts run in Node.js without invoking PowerShell, cmd or bash. Windows shortcuts, process statistics and login tasks use pinned `winax@3.6.8` COM bindings for WMI and Task Scheduler. Windows installation requires Visual Studio 2022 C++ build tools and Python; a native build failure stops installation. Register login startup with `pi-weixin-bridge daemon install-boot`.
 
 ### Linux / WSL
 
 This project is cross-platform (Windows / Linux / macOS; the daemon's process-tree kill adapts per platform). Linux supports the same background daemon and headless re-login flow.
 
 ```bash
-git clone https://github.com/ReachForStar/pi-weixin-bridge.git
-cd pi-weixin-bridge && npm install
-pi-weixin-bridge install --yes   # non-interactive install (all default paths)
-pi-weixin-bridge login           # first scan (a background process cannot scan, log in interactively once)
-pi-weixin-bridge daemon start    # run in background
+npm install -g pi-weixin-bridge
+pi-weixin-bridge install
 ```
 
 - The install wizard automatically uses default paths in non-TTY environments (CI / SSH without a terminal); in an interactive terminal it prompts for the state dir and workspace.
@@ -178,14 +134,38 @@ pi-weixin-bridge daemon start    # run in background
 - On Linux the credentials file is tightened to `600` and the state dir to `700` automatically.
 - Note: WSL and Windows have different `~`, so the two sides keep independent accounts/state.
 
+## Platform support
+
+Windows, macOS and Linux use Node.js 22+ and global npm installation. Windows uses native Node.js COM bindings, supports package paths with spaces, and does not invoke PowerShell or cmd. macOS login startup uses a per-user LaunchAgent and system plutil; stop the existing daemon before daemon install-boot. The agent runs the supervisor directly and can be removed with daemon uninstall-boot. Linux startup requires an available systemd user session; daemon start itself also works without systemd.
+
+Fresh installs use ~/pi-weixin-project. Existing Windows configurations retain D:\pi_weixin_project when that directory exists. Explicit paths and environment variables retain priority. Register startup again after changing Node, package or configuration paths. CI checks Windows, macOS and Linux before permitting a release.
+
 ## Configuration
 
-Resolution priority: **environment variables > `~/.pi-weixin-bridge/config.json` (written by the install wizard) > platform defaults**.
+Resolution priority: **environment variables > `~/.pi-weixin-bridge/config.json` (written by install / config) > platform defaults**.
+
+Run `pi-weixin-bridge config` to choose a setting interactively, or `config model` to select a provider and default model from pi models.json. Configuration does not log in again or start the daemon automatically, and does not replace existing per-conversation model selections.
+
+```bash
+pi-weixin-bridge config help
+pi-weixin-bridge config show
+pi-weixin-bridge config models
+pi-weixin-bridge config model 1
+pi-weixin-bridge config get model
+pi-weixin-bridge config set budget.dailyTokens 100000
+pi-weixin-bridge config set budget.timeZone Asia/Shanghai
+pi-weixin-bridge config set maxFileBytes 20971520
+pi-weixin-bridge config unset budget.dailyTokens
+```
+
+Model numbers refer to the current `config models` list; full provider/model references are also accepted. `config set <key> <value>` and `config unset <key>` support model, stateDir, workspace, access, access.admins, access.allowFrom, access.permission, budget, budget.dailyTokens, budget.dailyCost, budget.timeZone, maxFileBytes, and projects. Use JSON for arrays and objects; interactive input avoids shell quoting differences. Invalid settings leave the saved configuration unchanged. Nested changes preserve sibling fields. Clearing admins or allowFrom keeps an empty list; removing access entirely restores full permissions for every contact.
+
+Restart the daemon after saving. Stop it before changing stateDir or workspace; existing credentials, sessions and tasks are not migrated. A new state directory needs an existing account or a new login. Register startup again after changing paths. `config show` displays saved settings and active environment overrides without provider secrets. When upgrading from 1.6.1 without a saved default model, run `config model` and then `daemon start`.
 
 | Variable | Default | Description |
 |---|---|---|
 | `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | State directory (account credentials, session context, daemon logs) |
-| `PI_WEIXIN_WORKSPACE` | Windows `D:\pi_weixin_project` / others `~/pi-weixin-project` | Working directory for pi sessions (the agent reads/writes files here) |
+| `PI_WEIXIN_WORKSPACE` | `~/pi-weixin-project` for fresh installs; existing Windows paths preserved | Working directory for pi sessions (the agent reads/writes files here) |
 
 `config.json` example (generated by `install`, editable by hand):
 
@@ -251,9 +231,21 @@ Minimal example: [examples/echo-bot.ts](examples/echo-bot.ts).
 - ✅ Cross-platform (Windows / Linux / macOS), install wizard with interactive path selection + credentials permission hardening (POSIX 700/600)
 - ⬜ Outbound voice (needs silk encoding, not done)
 
+### 对话恢复与任务通知
+
+对话保存在状态目录的 sessions/ 下，按账号、工作目录和微信对话隔离；重启后收到下一条普通消息时恢复。/new 持久切换到新对话，旧记录保留。不会自动重做未完成任务，也无法恢复升级前仅存于内存的历史。
+
+任务开始确认，长任务每 30 秒报告阶段、耗时和已结束的工具调用次数，失败或停止时提示。通知不包含工具参数和原始错误，详细原因在服务日志中；通知发送失败单独记录，不中断任务。会话文件可能含用户消息、图片和工具结果，请保护状态目录。
+
+### 附件自动处理
+
+受支持 PDF、Word、PowerPoint、Excel、OpenDocument、RTF、EPUB、CSV 附件会由内置 anydoc 0.2.4 本地转为 Markdown，原件与转换文件路径交给 pi。原文件保留，转换文件位于原件旁边，Markdown 和其他格式沿用路径处理。每个文件转换最多运行 120 秒，Markdown 输出上限为 16 MiB；长时间转换显示进度。扫描 PDF 需要 OCR 时明确提示，不自动上传；Firecrawl 云端 OCR 须另行确认。转换失败保留原件并通知用户。
+
 ### Model
 
-- **Default model reference** `amax/qwen-3.8-27B` (requires that provider to be registered in `~/.pi/agent/models.json`; falls back to pi's default model with a warning if not); `/model <provider/modelId>` switches to any model registered in models.json, the choice is saved as the default (survives restarts); the `PI_WEIXIN_MODEL` env var can override the default.
+After QR login, install reads providers and models from pi models.json and prompts for a default model. No provider is hard-coded. PI_CODING_AGENT_DIR selects the pi directory; PI_WEIXIN_MODEL overrides the saved default. In WeChat, /model list lists choices and /model <number or provider/modelId> changes only the current conversation, persisting across restarts. /reload preserves individual selections.
+
+Additional commands: /sessions, /resume, /rename, /export, /files, /files find, /file, /ocr, /history, /result, /retry, /project, /schedule, /approve, /reject, /daily, /doctor. Files and task records persist locally; scanned PDF cloud OCR requires explicit approval for each file. Configure access.admins and access.allowFrom for restricted access; ordinary allowed users are read-only. Guarded tool execution requires approval within 120 seconds. Project directories are not OS sandboxes. Daily budgets restrict subsequent requests based on reported usage, with missing usage marked unknown. Failed or interrupted scheduled jobs pause, use separate sessions, and require valid WeChat context for text delivery. See the [complete Chinese guide](README.md) and WeChat /help for command parameters and configuration.
 
 ### Slash commands
 
@@ -264,7 +256,7 @@ Minimal example: [examples/echo-bot.ts](examples/echo-bot.ts).
 | `/new` | start a new conversation (clears context) |
 | `/model` | show current model |
 | `/model list` | available models (only providers registered in models.json) |
-| `/model <provider/modelId>` | switch model (applies to all in-flight sessions, saved as default) |
+| `/model <provider/modelId>` | switch only the current conversation model and persist its selection |
 | `/skill` | available skills (with descriptions) |
 | `/skill <name>` | next message is handled by that skill (pi reads its SKILL.md first) |
 | `/mcp` | configured MCP servers (with launch commands) |
@@ -292,7 +284,7 @@ npm test            # unit tests (vitest)
 npm run build       # build to dist/
 ```
 
-CI: GitHub Actions automatically runs typecheck + test + build on push / PR (Node 22). On a push to `main`, if the tests pass and the version isn't published yet, it auto-publishes to npm.
+CI：push / PR 自动运行类型检查、测试与构建（Node 22）；仅 main 本次推送前后 package.json 版本号变化且检查成功才发布 npm 和 Release。维护者须先确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。版本不变与 PR 不发布，已发布的 npm 版本可补建缺失的 Release。
 
 ## Troubleshooting
 
@@ -308,7 +300,7 @@ CI: GitHub Actions automatically runs typecheck + test + build on push / PR (Nod
 | Messages processed twice / conflicts | Don't run multiple instances polling getUpdates for the same WeChat account; make sure only one service is running |
 | `/usage` shows 0 tokens / cost | The model service doesn't report usage (some OpenAI-compatible proxies / self-hosted vLLM don't support streaming usage); this is a server-side behavior, not a stats failure — context usage is a local estimate and unaffected |
 | File sent on WeChat not received / `terminated` in logs | Transient CDN download drop; 1.5.3+ retries automatically (3 attempts, increasing backoff, 120s timeout) — resend the file if it still fails |
-| gh / npx network timeout | github.com connectivity fluctuation; configure a proxy (`HTTPS_PROXY`) and retry |
+| npm installation timeout | Check the npm registry and network connection, then retry |
 
 ## License
 

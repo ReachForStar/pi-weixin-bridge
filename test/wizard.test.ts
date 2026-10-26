@@ -45,9 +45,11 @@ describe("runInstallWizard", () => {
     expect(choice.stateDir).toBe(BOOTSTRAP_DIR);
     // 状态目录已被探针创建
     expect(existsSync(BOOTSTRAP_DIR)).toBe(true);
-    // config.json 已写入（默认值省略字段）
+    // 工作目录明确保存，避免之后被旧 Windows 默认目录替换。
     const cfg = JSON.parse(readFileSync(join(BOOTSTRAP_DIR, "config.json"), "utf8"));
-    expect(cfg).toEqual({});
+    expect(cfg).toEqual({ workspace: choice.workspace });
+    vi.resetModules();
+    expect((await import("../src/config.js")).WORKSPACE).toBe(choice.workspace);
   });
 
   it("交互：自定义路径写入 config.json 且 fromDefaults=false", async () => {

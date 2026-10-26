@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { ACCOUNT_FILE, STATE_DIR } from "./config.js";
 import { logger } from "./logger/index.js";
 import type { AccountState } from "./ilink/login.js";
+import { setTimeout as delay } from "node:timers/promises";
 
 /** 读取已保存的微信账号凭据；损坏/不可读时 warn 并返回 null（不静默吞错，便于区分“未登录”与“文件损坏”） */
 export function loadState(): AccountState | null {
@@ -53,15 +54,8 @@ export async function waitForAccountChange(
   for (;;) {
     if (signal.aborted) throw new Error("等待重登期间进程已退出");
     // 轮询等待，被 abort（退出信号）时立即唤醒，不睡满 pollMs
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, pollMs);
-      const onAbort = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      if (signal.aborted) onAbort();
-    });
+    await delay(pollMs, undefined, { signal });
+    signal.throwIfAborted();
     const s = loadState();
     if (s?.botToken && (!prev || s.botToken !== prev.botToken)) return s;
   }

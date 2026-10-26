@@ -1,27 +1,23 @@
 #Requires -Version 5.1
 # Create no-window launcher shortcuts (double-click runs the .ps1 hidden).
 # Run once: powershell -NoProfile -ExecutionPolicy Bypass -File create-shortcuts.ps1
+$ErrorActionPreference = "Stop"
 $scriptDir = $PSScriptRoot
 $WshShell = New-Object -ComObject WScript.Shell
 
 function New-LauncherShortcut {
     param([string]$Name, [string]$TargetPs1)
     if (-not (Test-Path -LiteralPath $TargetPs1)) {
-        Write-Warning "目标不存在，跳过: $TargetPs1"
-        return
+        throw "Launcher script not found: $TargetPs1"
     }
     $lnkPath = Join-Path $scriptDir $Name
-    try {
-        $lnk = $WshShell.CreateShortcut($lnkPath)
-        $lnk.TargetPath = "powershell.exe"
-        $lnk.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TargetPs1`""
-        $lnk.WorkingDirectory = $scriptDir
-        $lnk.Description = "pi-weixin-bridge"
-        $lnk.Save()
-        Write-Host "created: $lnkPath"
-    } catch {
-        Write-Warning "创建 $lnkPath 失败: $($_.Exception.Message)"
-    }
+    $lnk = $WshShell.CreateShortcut($lnkPath)
+    $lnk.TargetPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $lnk.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TargetPs1`""
+    $lnk.WorkingDirectory = $scriptDir
+    $lnk.Description = "pi-weixin-bridge"
+    $lnk.Save()
+    Write-Host "created: $lnkPath"
 }
 
 New-LauncherShortcut "start-pi-weixin-bridge.lnk" (Join-Path $scriptDir "start-service.ps1")

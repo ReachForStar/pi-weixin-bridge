@@ -10,6 +10,7 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  closeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,9 @@ import {
   isPidAlive,
   nextBackoffMs,
   readPidOrNull,
+  killProcessTree,
 } from "./daemon.js";
+import { acquireProcessLock } from "./process-lock.js";
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -51,28 +54,22 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
   mkdirSync(daemonDir, { recursive: true });
 
   // 重复 supervisor 自保护：并发 `daemon start` 或开机任务与手动启动竞态时，后到者退出
-  const existing = readPidOrNull(pidFile);
-  if (existing !== null && existing !== process.pid && isPidAlive(existing)) {
-    logger.warn(`[supervisor] 已有 supervisor 在运行（pid ${existing}），退出。`);
-    return;
-  }
-  writeFileSync(pidFile, String(process.pid), "utf8");
+  const release = acquireProcessLock(pidFile);
   // 重启计数：每次 supervisor 启动归零（status 表格显示），崩溃重启时递增
   const restartFile = join(daemonDir, "restarts.count");
-  writeFileSync(restartFile, "0", "utf8");
   let restarts = 0;
 
   let stopRequested = false;
+  const onSignal = () => { stopRequested = true; };
   if (!opts.shouldStop) {
-    const onSignal = () => {
-      stopRequested = true;
-    };
     process.on("SIGINT", onSignal);
     process.on("SIGTERM", onSignal);
   }
   const shouldStop = opts.shouldStop ?? (() => stopRequested);
 
   let backoff = baseBackoffMs;
+  try {
+  writeFileSync(restartFile, "0", "utf8");
   while (!shouldStop()) {
     // 每次拉起前检查日志体积，超阈值滚动
     if (existsSync(bridgeLog) && statSync(bridgeLog).size > LOG_ROTATE_BYTES) {
@@ -86,12 +83,21 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
       stdio: ["ignore", logFd, logFd],
       env: { ...process.env, PI_WEIXIN_HEADLESS: "1" },
     });
+    closeSync(logFd);
     writeFileSync(bridgePidFile, String(child.pid ?? 0), "utf8");
     logger.info(`[supervisor] 桥接进程已启动 pid=${child.pid}`);
 
     const code = await new Promise<number | null>((resolve) => {
-      child.on("error", () => resolve(null));
-      child.on("exit", (c) => resolve(c));
+      let requested = false;
+      const timer = setInterval(() => {
+        if (!shouldStop() || requested || !child.pid) return;
+        requested = true;
+        try { killProcessTree(child.pid); }
+        catch (error) { logger.error(`[supervisor] 停止子进程失败：${String(error)}`); }
+      }, 100);
+      const finish = (value: number | null) => { clearInterval(timer); resolve(value); };
+      child.on("error", (error) => { logger.error(`[supervisor] 子进程启动失败：${error.message}`); finish(null); });
+      child.on("exit", (c) => finish(c));
     });
 
     rmSync(bridgePidFile, { force: true });
@@ -105,11 +111,7 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
     const uptime = Date.now() - startedAt;
     backoff = nextBackoffMs(backoff, uptime);
     restarts += 1;
-    try {
-      writeFileSync(restartFile, String(restarts), "utf8");
-    } catch {
-      // 计数落盘失败不影响重启
-    }
+    writeFileSync(restartFile, String(restarts), "utf8");
     logger.warn(
       `[supervisor] 桥接进程异常退出（code=${code ?? "spawn失败"}），${backoff / 1000}s 后重启`,
     );
@@ -124,8 +126,11 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
       }, 200);
     });
   }
-
-  rmSync(pidFile, { force: true });
+  } finally {
+  process.removeListener("SIGINT", onSignal);
+  process.removeListener("SIGTERM", onSignal);
+  release();
   rmSync(bridgePidFile, { force: true });
   logger.info("[supervisor] 已停止。");
+  }
 }
