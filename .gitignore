@@ -5,6 +5,9 @@ coverage/
 *.log
 state/
 tmp/
+# 桥接运行时在工作目录落盘的附件（workspace 常是用户自己的仓库，避免误提交隐私内容）
+.weixin-files/
+media/inbound/
 *.lnk
 !scripts/templates/node-launcher.lnk
 # 环境变量与敏感文件（密钥/证书）

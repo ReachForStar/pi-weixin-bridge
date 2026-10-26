@@ -49,9 +49,31 @@ function buildCdnUploadUrl(uploadParam: string, filekey: string): string {
 
 const CDN_FETCH_TIMEOUT_MS = 120_000; // 大文件给足时间
 const CDN_FETCH_RETRIES = 3;
+/** 下载期间的内存上限（明文 + 解密副本，故取配置值的一半；配置在调用侧另有最终校验） */
+const DOWNLOAD_MEMORY_CAP = 64 * 1024 * 1024;
+
+/** 流式读取响应体，超过 maxBytes 立即中止，避免大文件先占满内存再被拒 */
+async function readBodyCapped(res: Response, maxBytes: number): Promise<Buffer> {
+  const declared = Number(res.headers.get("content-length"));
+  // content-length 是密文长度；解密后不超过它，可作为提前拒绝的依据
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new Error(`CDN 下载失败 413: 文件过大（${declared} 字节，上限 ${maxBytes}）`);
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    total += chunk.byteLength;
+    if (total > maxBytes) {
+      throw new Error(`CDN 下载失败 413: 文件过大（已读 ${total} 字节，上限 ${maxBytes}）`);
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
 
 /** 下载 CDN 字节：超时 + 重试（terminated 等瞬时断连重拉；4xx 不重试——签名/参数错误重试无意义） */
-async function fetchCdnBytes(url: string, signal?: AbortSignal): Promise<Buffer> {
+async function fetchCdnBytes(url: string, signal?: AbortSignal, maxBytes = DOWNLOAD_MEMORY_CAP): Promise<Buffer> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= CDN_FETCH_RETRIES; attempt++) {
     try {
@@ -59,10 +81,11 @@ async function fetchCdnBytes(url: string, signal?: AbortSignal): Promise<Buffer>
       const timeout = AbortSignal.timeout(CDN_FETCH_TIMEOUT_MS);
       const res = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
       if (!res.ok) throw new Error(`CDN 下载失败 ${res.status} ${res.statusText}`);
-      return Buffer.from(await res.arrayBuffer());
+      return await readBodyCapped(res, maxBytes);
     } catch (err) {
       signal?.throwIfAborted();
       lastErr = err;
+      // 4xx 与超限都是确定性失败，重试无意义
       if (/CDN 下载失败 4\d\d/.test(String(err))) break;
       if (attempt < CDN_FETCH_RETRIES) {
         logger.warn(`[media] CDN 下载第 ${attempt} 次失败（${String(err)}），${500 * attempt}ms 后重试`);
@@ -73,15 +96,15 @@ async function fetchCdnBytes(url: string, signal?: AbortSignal): Promise<Buffer>
   throw lastErr;
 }
 
-async function downloadAndDecrypt(encryptQueryParam: string, aesKeyBase64: string, fullUrl?: string, signal?: AbortSignal): Promise<Buffer> {
+async function downloadAndDecrypt(encryptQueryParam: string, aesKeyBase64: string, fullUrl?: string, signal?: AbortSignal, maxBytes?: number): Promise<Buffer> {
   const key = parseAesKey(aesKeyBase64);
   const url = fullUrl || buildCdnDownloadUrl(encryptQueryParam);
-  return decryptAesEcb(await fetchCdnBytes(url, signal), key);
+  return decryptAesEcb(await fetchCdnBytes(url, signal, maxBytes), key);
 }
 
-async function downloadPlain(encryptQueryParam: string, fullUrl?: string, signal?: AbortSignal): Promise<Buffer> {
+async function downloadPlain(encryptQueryParam: string, fullUrl?: string, signal?: AbortSignal, maxBytes?: number): Promise<Buffer> {
   const url = fullUrl || buildCdnDownloadUrl(encryptQueryParam);
-  return fetchCdnBytes(url, signal);
+  return fetchCdnBytes(url, signal, maxBytes);
 }
 
 /** 按文件头魔数判断图片 MIME */
@@ -116,11 +139,13 @@ export class MediaDownloadError extends Error {
   }
 }
 
-export async function downloadInboundMedia(items?: MessageItem[], signal?: AbortSignal, workspace = WORKSPACE): Promise<InboundMedia> {
+export async function downloadInboundMedia(items?: MessageItem[], signal?: AbortSignal, workspace = WORKSPACE, maxFileBytes = DOWNLOAD_MEMORY_CAP): Promise<InboundMedia> {
   signal?.throwIfAborted();
   const result: InboundMedia = { images: [], notes: [], files: [] };
   if (!items?.length) return result;
   const mediaDir = join(workspace, "media", "inbound");
+  // 加密开销按 AES 分块上浮，留出余量；解密后大小仍以调用侧 maxFileBytes 为准
+  const downloadCap = Math.max(maxFileBytes, 1) + 16;
 
   for (const item of items) {
     try {
@@ -133,8 +158,8 @@ export async function downloadInboundMedia(items?: MessageItem[], signal?: Abort
           ? Buffer.from(img.aeskey, "hex").toString("base64")
           : img.media?.aes_key;
         const buf = aesKeyB64
-          ? await downloadAndDecrypt(img.media?.encrypt_query_param ?? "", aesKeyB64, img.media?.full_url, signal)
-          : await downloadPlain(img.media?.encrypt_query_param ?? "", img.media?.full_url, signal);
+          ? await downloadAndDecrypt(img.media?.encrypt_query_param ?? "", aesKeyB64, img.media?.full_url, signal, downloadCap)
+          : await downloadPlain(img.media?.encrypt_query_param ?? "", img.media?.full_url, signal, downloadCap);
         result.images.push({ mimeType: detectImageMime(buf), data: buf.toString("base64") });
       } else if (item.type === MessageItemType.VOICE) {
         // 有语音转文字时由 extractText 提取为正文，这里仅在无文字时补充说明
@@ -142,8 +167,10 @@ export async function downloadInboundMedia(items?: MessageItem[], signal?: Abort
       } else if (item.type === MessageItemType.FILE) {
         const f = item.file_item;
         if ((!f?.media?.encrypt_query_param && !f?.media?.full_url) || !f?.media?.aes_key) throw new Error("文件缺少下载地址或解密密钥");
-        const buf = await downloadAndDecrypt(f.media.encrypt_query_param ?? "", f.media.aes_key, f.media.full_url, signal);
+        const buf = await downloadAndDecrypt(f.media.encrypt_query_param ?? "", f.media.aes_key, f.media.full_url, signal, downloadCap);
         signal?.throwIfAborted();
+        // 超限文件在落盘前就拒绝，不能先写盘再由调用方删除
+        if (buf.length > maxFileBytes) throw new Error("附件超过配置大小上限");
         await mkdir(mediaDir, { recursive: true });
         const name = f.file_name || `file-${Date.now()}`;
         // 微信文件名不参与目录选择，随机前缀避免并发附件互相覆盖。
@@ -156,8 +183,9 @@ export async function downloadInboundMedia(items?: MessageItem[], signal?: Abort
       } else if (item.type === MessageItemType.VIDEO) {
         const v = item.video_item;
         if ((!v?.media?.encrypt_query_param && !v?.media?.full_url) || !v?.media?.aes_key) throw new Error("视频缺少下载地址或解密密钥");
-        const buf = await downloadAndDecrypt(v.media.encrypt_query_param ?? "", v.media.aes_key, v.media.full_url, signal);
+        const buf = await downloadAndDecrypt(v.media.encrypt_query_param ?? "", v.media.aes_key, v.media.full_url, signal, downloadCap);
         signal?.throwIfAborted();
+        if (buf.length > maxFileBytes) throw new Error("附件超过配置大小上限");
         await mkdir(mediaDir, { recursive: true });
         const path = join(mediaDir, `video-${randomUUID()}.mp4`);
         await writeFile(path, buf, { flag: "wx" });

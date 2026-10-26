@@ -261,7 +261,8 @@ export class Bridge {
     notifier.start();
     // 入站媒体：图片转 base64 供 pi 视觉；文件/视频落盘并以说明注入
     notifier.update({ stage: "downloading" });
-    const media = await downloadInboundMedia(msg.item_list, signal, profile.workspace);
+    // 带上配置上限：下载阶段就拒绝超大文件，避免先占满内存/写盘再被拒
+    const media = await downloadInboundMedia(msg.item_list, signal, profile.workspace, this.features.policy.maxFileBytes());
     const files = [];
     for (const file of media.files) {
       if ((await stat(file.path)).size > this.features.policy.maxFileBytes()) throw new Error("附件超过配置大小上限");

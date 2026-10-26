@@ -1,9 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import MiniSearch from "minisearch";
 import { STATE_DIR } from "../config.js";
 import { ScopedState, scopeId } from "./state.js";
+
+/** 单文件索引上限与单次检索总预算（防止一次 /files find 读入过多内容） */
+const SEARCH_MAX_BYTES_PER_FILE = 2 * 1024 * 1024;
+const SEARCH_TOTAL_BYTES = 32 * 1024 * 1024;
 
 export interface LibraryFile {
   id: string;
@@ -32,9 +36,11 @@ export class FileLibrary {
     const bytes = await readFile(file.path);
     const hash = createHash("sha256").update(bytes).digest("hex");
     const entries = this.list(key);
-    const existing = entries.find((entry) => entry.hash === hash);
-    if (existing) return existing;
     const directory = join(workspace, ".weixin-files", scopeId(key));
+    // 去重必须限定在当前项目目录内：切换项目后重新上传同一文件时，
+    // 复用旧条目会把 A 项目的路径带进 B 项目，导致后续 sendFile 越界或内容串项目。
+    const existing = entries.find((entry) => entry.hash === hash && dirname(entry.path) === directory);
+    if (existing) return existing;
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const id = randomUUID();
     const safeName = basename(file.name.replace(/\\/g, "/")).replace(/[\x00-\x1f<>:"/\\|?*]/g, "_").replace(/[. ]+$/, "").slice(0, 120) || "document";
@@ -53,11 +59,19 @@ export class FileLibrary {
     const index = new MiniSearch({ fields: ["name", "text"], storeFields: ["name", "path", "text"],
       tokenize: (text) => text.match(/[\p{Script=Han}]|[\p{L}\p{N}_-]+/gu) ?? [] });
     // 只索引当前对话的资料，限制单次加载范围，避免大文件耗尽内存。
+    // 单个文件已删除/不可读时跳过该文件，不能让一次 /files find 整体失败。
+    let budget = SEARCH_TOTAL_BYTES;
     for (const file of this.list(key).slice(-200)) {
       const path = file.markdown ?? file.path;
       if (!file.markdown && !/\.(md|txt|csv)$/i.test(file.name)) continue;
-      if ((await stat(path)).size > 2 * 1024 * 1024) continue;
-      index.add({ id: file.id, name: file.name, path, text: await readFile(path, "utf8") });
+      try {
+        const size = (await stat(path)).size;
+        if (size > SEARCH_MAX_BYTES_PER_FILE || size > budget) continue;
+        budget -= size;
+        index.add({ id: file.id, name: file.name, path, text: await readFile(path, "utf8") });
+      } catch {
+        // 文件已被用户清理或暂时不可读：跳过，不影响其余资料检索
+      }
     }
     return index.search(query, { prefix: true, combineWith: "AND" }).slice(0, 8).map((hit) => {
       const text = String(hit.text);

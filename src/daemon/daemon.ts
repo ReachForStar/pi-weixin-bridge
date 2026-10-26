@@ -6,7 +6,9 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   rmSync,
+  statSync,
   writeFileSync,
   closeSync,
 } from "node:fs";
@@ -30,6 +32,8 @@ export const SUPERVISOR_PID_FILE = join(DAEMON_DIR, "supervisor.pid");
 export const BRIDGE_PID_FILE = join(DAEMON_DIR, "bridge.pid");
 export const BRIDGE_LOG_FILE = join(DAEMON_DIR, "bridge.log");
 export const SUPERVISOR_LOG_FILE = join(DAEMON_DIR, "supervisor.log");
+/** supervisor.log 轮转阈值（与 supervisor.ts 的 bridge.log 一致） */
+const SUPERVISOR_LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
 export const BASE_BACKOFF_MS = 3_000;
 export const MAX_BACKOFF_MS = 60_000;
@@ -111,6 +115,10 @@ export async function startDaemon(): Promise<{ ok: boolean; message: string }> {
   }
   mkdirSync(DAEMON_DIR, { recursive: true });
   hardenStateDir(); // 凭据所在目录，POSIX 下收紧为 700
+  // supervisor.log 只有 daemon start 会打开写入，在此处轮转即可（supervisor 自身无法安全轮转自己的 stdout）
+  if (existsSync(SUPERVISOR_LOG_FILE) && statSync(SUPERVISOR_LOG_FILE).size > SUPERVISOR_LOG_ROTATE_BYTES) {
+    renameSync(SUPERVISOR_LOG_FILE, `${SUPERVISOR_LOG_FILE}.1`);
+  }
   const fd = openSync(SUPERVISOR_LOG_FILE, "a");
   const child = spawn(process.execPath, [BIN_PATH, "daemon", "supervise"], {
     cwd: PKG_ROOT,

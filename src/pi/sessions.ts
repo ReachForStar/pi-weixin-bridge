@@ -21,6 +21,11 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { STATE_DIR } from "../config.js";
 
+/** 内存中保留的会话上限；超出后淘汰最久未使用的空闲会话 */
+const MAX_IDLE_SESSIONS = 32;
+/** 会话空闲多久后可被淘汰（仍在处理中的会话永不淘汰） */
+const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
+
 /** 当前消息的回复上下文（供自定义工具回发媒体） */
 export interface ReplyContext {
   /** 把本地图片发送到当前微信对话（由 bridge 实现上传+发送） */
@@ -55,6 +60,8 @@ export class PiSessionManager {
   private readonly library = new FileLibrary();
   readonly usage = new UsageLedger();
   private sessions = new Map<string, AgentSession>();
+  /** 各会话最后一次使用时间（LRU 淘汰依据） */
+  private sessionTouched = new Map<string, number>();
   private locks = new Map<string, Promise<void>>();
   private replyContexts = new Map<string, ReplyContext>();
   /** 正在处理 prompt 的会话 key（/stop、/status 用） */
@@ -81,7 +88,7 @@ export class PiSessionManager {
     if (JSON.stringify(this.profiles.get(key)) === JSON.stringify(profile)) return;
     if (this.busy.has(key)) throw new Error("任务执行期间不能修改会话配置");
     if (JSON.stringify(this.profiles.get(key)) !== JSON.stringify(profile)) {
-      this.sessions.get(key)?.dispose(); this.sessions.delete(key);
+      this.dropSession(key);
       this.profiles.set(key, profile);
     }
   }
@@ -92,8 +99,15 @@ export class PiSessionManager {
   }
 
   async history(key: string): Promise<string> {
-    const current = this.store(key).open(key).getSessionId();
+    // 先列历史再取当前 id：open() 失败（索引损坏/记录缺失）不应让整份历史不可见，
+    // 否则用户失去 /resume 这条自救路径。
     const sessions = await this.store(key).list(key);
+    let current: string | undefined;
+    try {
+      current = this.store(key).open(key).getSessionId();
+    } catch (error) {
+      logger.warn(`[pi] 当前对话索引不可用，历史列表按无当前项展示：${String(error)}`);
+    }
     return ["📚 历史会话", "", ...sessions.slice(0, 30).map((entry) =>
       `- ${entry.id} ${entry.id === current ? "（当前）" : ""} ${entry.name || entry.firstMessage.slice(0, 40) || "未命名"} · ${entry.messageCount} 条消息`),
       "", "/resume <编号> 切换，/rename <名称> 命名，/export 导出 HTML"].join("\n");
@@ -102,14 +116,14 @@ export class PiSessionManager {
   async resume(key: string, id: string): Promise<void> {
     await this.enqueue(key, async () => {
       await this.store(key).resume(key, id);
-      this.sessions.get(key)?.dispose(); this.sessions.delete(key); this.pendingDirectives.delete(key);
+      this.dropSession(key); this.pendingDirectives.delete(key);
     });
   }
 
   async rename(key: string, name: string): Promise<void> {
     await this.enqueue(key, async () => {
       this.store(key).rename(key, name);
-      this.sessions.get(key)?.dispose(); this.sessions.delete(key);
+      this.dropSession(key);
     });
   }
 
@@ -274,9 +288,24 @@ export class PiSessionManager {
       }) });
   }
 
+  /** 丢弃内存中的会话（dispose + 清理所有按会话索引的状态），避免 LRU 时间戳等残留 */
+  private dropSession(key: string): void {
+    const session = this.sessions.get(key);
+    try { session?.dispose(); } catch (error) { logger.warn(`[pi] 释放会话失败：${String(error)}`); }
+    this.sessions.delete(key);
+    this.sessionTouched.delete(key);
+  }
+
   private async getOrCreate(key: string): Promise<AgentSession> {
-    let session = this.sessions.get(key);
-    if (!session) {
+    const existing = this.sessions.get(key);
+    if (existing) {
+      // 命中即刷新 LRU 时间戳
+      this.sessionTouched.set(key, Date.now());
+      return existing;
+    }
+    // 新建前先淘汰空闲会话，避免 session_id 轮换时内存与磁盘双增长
+    this.evictIdleSessions();
+    {
       // 会话选择优先于项目和安装默认值，配置缺失时明确拒绝请求。
       const profile = this.profiles.get(key) ?? { workspace: WORKSPACE };
       const ref = profile.model || this.modelRef;
@@ -319,11 +348,42 @@ export class PiSessionManager {
       });
       // SDK 的 createAgentSession 不触发 session_start（只有交互式 CLI 的 bindExtensions 会），
       // 不调它 wiki-memory/safe-guard/task-flow 等订阅 session_start 的 hook 永远不生效
-      await created.bindExtensions({});
-      session = created;
-      this.sessions.set(key, session);
+      try {
+        await created.bindExtensions({});
+      } catch (error) {
+        // 绑定失败时该 session 既不入 map 也无人释放，每次失败都会泄漏一个 AgentSession
+        try { created.dispose(); } catch { /* 释放异常不掩盖原始错误 */ }
+        throw error;
+      }
+      this.sessions.set(key, created);
+      this.sessionTouched.set(key, Date.now());
+      return created;
     }
-    return session;
+  }
+
+  /**
+   * 淘汰空闲会话以限制内存与磁盘增长。
+   * 只淘汰「非 busy 且超过空闲阈值」的会话，且保留最近使用的一部分；
+   * 会话已持久化在磁盘上，淘汰后下次使用会经 getOrCreate 重新打开，上下文不会丢失。
+   */
+  evictIdleSessions(now = Date.now()): number {
+    if (this.sessions.size <= MAX_IDLE_SESSIONS) return 0;
+    const candidates = [...this.sessions.keys()]
+      .filter((key) => !this.busy.has(key) && !this.locks.has(key))
+      .map((key) => ({ key, touched: this.sessionTouched.get(key) ?? 0 }))
+      .filter((entry) => now - entry.touched > SESSION_IDLE_TTL_MS)
+      // 最久未使用的先淘汰
+      .sort((a, b) => a.touched - b.touched);
+    const excess = this.sessions.size - MAX_IDLE_SESSIONS;
+    let evicted = 0;
+    for (const entry of candidates) {
+      if (evicted >= excess) break;
+      this.dropSession(entry.key);
+      this.replyContexts.delete(entry.key);
+      evicted++;
+    }
+    if (evicted) logger.info(`[pi] 已淘汰 ${evicted} 个空闲会话，当前保留 ${this.sessions.size} 个`);
+    return evicted;
   }
 
   /** 对外入口：按 key 串行执行对话 */
@@ -430,17 +490,14 @@ export class PiSessionManager {
       }
     }
     this.sessions.clear();
+    this.sessionTouched.clear();
   }
 
   /** 重置指定会话（dispose 并移除，下次 chat 时新建）——用于 /new 命令 */
   async resetSession(key: string): Promise<void> {
     await this.enqueue(key, async () => {
       this.store(key).reset(key);
-      const session = this.sessions.get(key);
-      if (session) {
-        session.dispose();
-      }
-      this.sessions.delete(key);
+      this.dropSession(key);
       this.replyContexts.delete(key);
       this.pendingDirectives.delete(key);
     });
