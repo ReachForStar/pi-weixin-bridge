@@ -226,3 +226,7 @@ main CI 36811222768 三平台检查及 publish 全部成功，正式 GitHub Rele
 ## [2026-10-26] chore | 合并远端 main 并与本地提交收敛
 
 本地 main 落后远端 31 个提交，另有本地提交「归一化依赖锁文件源主机修复 EALLOWREMOTE」。以远端为基线合并，唯一冲突在 `package-lock.json`：取远端 1.7.1 结构后重新归一化全部 `resolved` 主机为 `registry.npmjs.org`（119 条 npmmirror），保留本地提交的变更意图。验证：`npm ci` 200 包干净安装、typecheck、build、155 项测试通过（7 项按平台跳过）。
+
+## [2026-10-26] query | 补写 SDK 会话 session_start 缺失页
+
+从本地历史 wiki 抢救唯一有长期价值的一条：SDK 的 `createAgentSession` 不 emit `session_start`，桥接在 `src/pi/sessions.ts` 补调 `await created.bindExtensions({})`（该代码至今仍在）。原页基于 SDK 0.82 前的实现，重写时对照 `dist/core/agent-session.js` 与 `dist/core/sdk.js` 核实事件时机与 `dispose()` 不发 `session_shutdown` 的边界。见 [SDK 会话不触发 session_start](queries/sdk-session-start-hooks.md)。
