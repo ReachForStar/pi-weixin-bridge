@@ -234,3 +234,7 @@ main CI 36811222768 三平台检查及 publish 全部成功，正式 GitHub Rele
 ## [2026-10-26] fix | 并入 pi 核心 1.4.0 升级并解锁文件冲突
 
 PR #3（fork）把 pi-coding-agent 0.82.0 升到 1.4.0，冲突只在 `package-lock.json`：PR 侧 117 条 `resolved` 指向 npmmirror，main 已归一化为 npmjs，npm 12 的 `allow-remote=none` 会直接拒绝。解法是只取升级相关的 4 个文件，以 main 为基线用 `npm install --package-lock-only` 重生成锁文件（244 条全 npmjs）。同步 `engines.node >=22.19.0` 与中英文 README，补 CHANGELOG Unreleased。排除 PR 夹带的 task-notifier 行为变更（删除开始确认与 30 秒进度，与 README/CHANGELOG/wiki 记录冲突，且 typing 持续时长未验证）。验证：`npm ci`、typecheck、build 通过，155 测试通过、7 跳过。见 [合并 PR #3](queries/pr-3-pi-core-upgrade.md)。
+
+## [2026-10-26] release | 发布 1.7.2
+
+版本号 1.7.1 → 1.7.2，内容为 pi 核心 1.4.0 升级、Homebrew 分离 formula 的 npm 入口查找、`fast-xml-parser` 显式依赖与锁文件源主机归一化。提交 `ec2784f` 推送 main 触发发布，CI 40277881017 三平台 check 与 publish 全部成功；官方 registry 的 `version` 与 `latest` 均为 1.7.2，Release v1.7.2 非草稿、非预发布，指向 `ec2784f`。本地 npm ci、typecheck、build 通过，155 测试通过、7 跳过；`npm pack --dry-run` 55 个条目不含 test、tmp、docs。见 [1.7.2 发布记录](queries/release-1-7-2.md)。

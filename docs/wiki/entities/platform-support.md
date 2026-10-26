@@ -3,13 +3,13 @@ title: Windows macOS Linux 适配
 type: entity
 tags: [平台, 安装, 后台, CI]
 created: 2026-10-01
-updated: 2026-10-01
+updated: 2026-10-26
 status: active
 ---
 
 ## 职责
 
-统一三平台 npm 安装、配置、后台运行与登录自启，保持 1.7.1 未发布。
+统一三平台 npm 安装、配置、后台运行与登录自启，当前发布版本 1.7.2。
 
 ## 关键文件与接口
 
