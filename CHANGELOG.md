@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 升级 pi-coding-agent 0.82.0 → 1.4.0：桥接引用的 API 在 1.4.0 兼容，无需改动调用代码；`engines.node` 随之上调为 `>=22.19.0`。
+- `npmCommand()` 与 CI 运行器增加 Homebrew 分离 formula 布局的 npm 入口候选路径，修复该布局下解析 npm 失败。
+
+### Fixed
+
+- `fast-xml-parser` 改为自身 devDependency：pi 核心 1.4.0 依赖树不再携带该包，Windows 测试原先借用的传递依赖失效导致模块找不到。
+- 依赖锁文件 `resolved` 主机统一为 `registry.npmjs.org`，避免 npm 12 远程来源限制导致安装被拒。
+
 ## [1.7.1] - 2026-10-01
 
 ### Added

@@ -28,7 +28,7 @@ flowchart TD
 ## 前置条件
 
 - 微信 App **8.0.70+**，且账号已开通 **ClawBot 插件**（设置 → 插件 → 微信ClawBot，官方灰度放量中）
-- Node.js **22+**（pi-coding-agent SDK 及其内置 undici 要求 Node 22）
+- Node.js **22.19+**（pi-coding-agent SDK 及其内置 undici 要求 Node 22.19 及以上）
 - 已安装并配置好 **pi**（本服务复用 `~/.pi/agent` 下的模型与鉴权配置）
 
 ## 安装与运行
@@ -122,7 +122,7 @@ CLI 与业务脚本使用 Node.js，不调用 PowerShell、cmd 或 bash。Window
 
 ### Windows / macOS / Linux 适配
 
-三平台均使用 Node.js 22+ 和 npm 全局安装，首次运行 install 完成路径、微信登录和模型选择；后续通过 config 修改配置。新安装默认工作目录为 ~/pi-weixin-project；已有 Windows 配置且旧 D:\pi_weixin_project 存在时保留旧目录，显式路径与环境变量仍优先。
+三平台均使用 Node.js 22.19+ 和 npm 全局安装，首次运行 install 完成路径、微信登录和模型选择；后续通过 config 修改配置。新安装默认工作目录为 ~/pi-weixin-project；已有 Windows 配置且旧 D:\pi_weixin_project 存在时保留旧目录，显式路径与环境变量仍优先。
 
 - Windows：使用 Node.js 原生 COM 绑定，无需 PowerShell 或 cmd；支持含空格的 npm 包路径、最小化快捷方式与每用户登录计划任务。
 - macOS：后台进程及状态统计使用系统工具；登录自启保存至 ~/Library/LaunchAgents，通过系统 plutil 转换配置，直接运行前台 supervisor，由其管理桥接子进程。注册前先停止已有后台，避免重复实例。

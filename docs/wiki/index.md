@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-10-01
+updated: 2026-10-26
 ---
 
 # Wiki 索引
@@ -54,3 +54,4 @@ updated: 2026-10-01
 - [1.7.1 发布记录](queries/release-1-7-1.md) — 主分支合并发布授权、版本核验及 Issue 文案确认约束。
 - [npm-token-check 无法创建提醒 issue 与令牌轮换](queries/npm-token-check-issue-permission.md) — 空权限导致 403，换令牌需同步 TOKEN_EXPIRES。
 - [SDK 会话不触发 session_start](queries/sdk-session-start-hooks.md) — 桥接需补调 bindExtensions，否则订阅该事件的 hook 全不生效。
+- [合并 PR #3：pi 核心升级到 1.4.0](queries/pr-3-pi-core-upgrade.md) — 锁文件源主机冲突、保留与排除的改动、验证边界。

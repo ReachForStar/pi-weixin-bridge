@@ -52,7 +52,9 @@ await created.bindExtensions({});
 
 - 升级 pi-coding-agent 后复核 `dist/core/sdk.js` 是否开始自动调用 `bindExtensions`。
   若已自动调用，必须移除桥接层的补调，否则 `session_start` 重复触发会重置
-  safe-guard 计数（当前无实际危害，但语义错误）。
+  safe-guard 计数（当前无实际危害，但语义错误）。2026-10-26 升到 1.4.0 后复核：
+  `sdk.js` 仍无 `bindExtensions` 调用，`session_start` 只在 `agent-session.js` 的
+  `bindExtensions` 与 `reload` 中 emit，补调必须保留，见[合并 PR #3](pr-3-pi-core-upgrade.md)。
 - 升级后按注入结果核对：会话结束后导出 jsonl，检查是否出现
   `customType` 为 `wiki-memory`、`tmp-guard` 的注入消息。task-flow 对短 prompt
   不注入属其正常门控（非任务句式且正文过短时跳过），不能据此判定失效。

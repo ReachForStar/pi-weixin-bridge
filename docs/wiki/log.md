@@ -230,3 +230,7 @@ main CI 36811222768 三平台检查及 publish 全部成功，正式 GitHub Rele
 ## [2026-10-26] query | 补写 SDK 会话 session_start 缺失页
 
 从本地历史 wiki 抢救唯一有长期价值的一条：SDK 的 `createAgentSession` 不 emit `session_start`，桥接在 `src/pi/sessions.ts` 补调 `await created.bindExtensions({})`（该代码至今仍在）。原页基于 SDK 0.82 前的实现，重写时对照 `dist/core/agent-session.js` 与 `dist/core/sdk.js` 核实事件时机与 `dispose()` 不发 `session_shutdown` 的边界。见 [SDK 会话不触发 session_start](queries/sdk-session-start-hooks.md)。
+
+## [2026-10-26] fix | 并入 pi 核心 1.4.0 升级并解锁文件冲突
+
+PR #3（fork）把 pi-coding-agent 0.82.0 升到 1.4.0，冲突只在 `package-lock.json`：PR 侧 117 条 `resolved` 指向 npmmirror，main 已归一化为 npmjs，npm 12 的 `allow-remote=none` 会直接拒绝。解法是只取升级相关的 4 个文件，以 main 为基线用 `npm install --package-lock-only` 重生成锁文件（244 条全 npmjs）。同步 `engines.node >=22.19.0` 与中英文 README，补 CHANGELOG Unreleased。排除 PR 夹带的 task-notifier 行为变更（删除开始确认与 30 秒进度，与 README/CHANGELOG/wiki 记录冲突，且 typing 持续时长未验证）。验证：`npm ci`、typecheck、build 通过，155 测试通过、7 跳过。见 [合并 PR #3](queries/pr-3-pi-core-upgrade.md)。

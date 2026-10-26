@@ -28,7 +28,7 @@ The protocol is based on Tencent's official open-source repo [`Tencent/openclaw-
 ## Prerequisites
 
 - WeChat app **8.0.70+**, with the **ClawBot plugin** enabled on your account (Settings → Plugins → WeChat ClawBot; official gradual rollout)
-- Node.js **22+** (the pi-coding-agent SDK and its bundled undici require Node 22)
+- Node.js **22.19+** (the pi-coding-agent SDK and its bundled undici require Node 22.19 or newer)
 - **pi** installed and configured (this service reuses the model & auth config under `~/.pi/agent`)
 
 ## Install & Run
@@ -136,7 +136,7 @@ pi-weixin-bridge install
 
 ## Platform support
 
-Windows, macOS and Linux use Node.js 22+ and global npm installation. Windows uses native Node.js COM bindings, supports package paths with spaces, and does not invoke PowerShell or cmd. macOS login startup uses a per-user LaunchAgent and system plutil; stop the existing daemon before daemon install-boot. The agent runs the supervisor directly and can be removed with daemon uninstall-boot. Linux startup requires an available systemd user session; daemon start itself also works without systemd.
+Windows, macOS and Linux use Node.js 22.19+ and global npm installation. Windows uses native Node.js COM bindings, supports package paths with spaces, and does not invoke PowerShell or cmd. macOS login startup uses a per-user LaunchAgent and system plutil; stop the existing daemon before daemon install-boot. The agent runs the supervisor directly and can be removed with daemon uninstall-boot. Linux startup requires an available systemd user session; daemon start itself also works without systemd.
 
 Fresh installs use ~/pi-weixin-project. Existing Windows configurations retain D:\pi_weixin_project when that directory exists. Explicit paths and environment variables retain priority. Register startup again after changing Node, package or configuration paths. CI checks Windows, macOS and Linux before permitting a release.
 
