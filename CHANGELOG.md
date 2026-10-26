@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-10-26
+
+### Changed
+
+- 同步中英文 README 与 1.7.3 实现对齐：项目结构补齐 `features/` 全层与 `fs-atomic`、`pid-identity` 等 14 个文件的说明；功能清单补状态损坏降级、PID 身份校验、附件流式限额、空闲会话淘汰与字素簇分块；开发段注明 typecheck 覆盖范围与 `tsx` 运行时依赖的原因。
+- 故障排查表补损坏隔离、PID 复用、`.reclaim` 残留与附件超限调整四条；环境变量表补 `LOG_LEVEL`、`PI_CODING_AGENT_DIR`、`PI_WEIXIN_MODEL` 并说明程序不读取 `.env` 文件。
+
 ## [1.7.3] - 2026-10-26
 
 ### Added
