@@ -64,7 +64,8 @@ export interface WizardChoice {
 /** 实际写删探针文件验证目录可写 */
 function checkWritable(dir: string): string | null {
   try {
-    mkdirSync(dir, { recursive: true });
+    // 以 0o700 创建：状态目录存放凭据，不能因 umask 宽松而对同机其他用户可读
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     const probe = join(dir, `.write-test-${process.pid}`);
     const fd = openSync(probe, "w");
     closeSync(fd);
@@ -127,7 +128,8 @@ export async function runInstallWizard(
   }
 
   // 凭据所在目录，POSIX 下收紧为 700（探针刚创建/确认了目录存在）
-  hardenStateDir();
+  // 必须传用户实际选择的目录：默认参数指向模块常量 STATE_DIR，对自定义目录无效
+  hardenStateDir(stateDir);
 
   // 持久化（引导目录固定，即使状态目录被自定义也能被后续进程发现）
   mkdirSync(BOOTSTRAP_DIR, { recursive: true });

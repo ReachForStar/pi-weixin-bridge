@@ -25,6 +25,7 @@ import {
   killProcessTree,
 } from "./daemon.js";
 import { acquireProcessLock } from "./process-lock.js";
+import { formatPidFile } from "./pid-identity.js";
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -84,7 +85,9 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
       env: { ...process.env, PI_WEIXIN_HEADLESS: "1" },
     });
     closeSync(logFd);
-    writeFileSync(bridgePidFile, String(child.pid ?? 0), "utf8");
+    // spawn 失败时 child.pid 为 undefined：此时不写 PID 文件（写 "0" 会被判定为损坏锁）
+    if (child.pid) writeFileSync(bridgePidFile, formatPidFile(child.pid), "utf8");
+    else rmSync(bridgePidFile, { force: true });
     logger.info(`[supervisor] 桥接进程已启动 pid=${child.pid}`);
 
     const code = await new Promise<number | null>((resolve) => {

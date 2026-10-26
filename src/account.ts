@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { ACCOUNT_FILE, STATE_DIR } from "./config.js";
 import { logger } from "./logger/index.js";
 import type { AccountState } from "./ilink/login.js";
@@ -16,10 +17,10 @@ export function loadState(): AccountState | null {
 }
 
 /** POSIX 下收紧状态目录权限（凭据所在，mkdir 的 mode 受 umask 影响，需显式修正） */
-export function hardenStateDir(): void {
-  if (process.platform === "win32" || !existsSync(STATE_DIR)) return;
+export function hardenStateDir(dir: string = STATE_DIR): void {
+  if (process.platform === "win32" || !existsSync(dir)) return;
   try {
-    chmodSync(STATE_DIR, 0o700);
+    chmodSync(dir, 0o700);
   } catch {
     // 非属主等场景不阻断主流程
   }
@@ -28,8 +29,19 @@ export function hardenStateDir(): void {
 /** 持久化微信账号凭据；原子写（tmp+rename，进程中途被杀不会留下半截文件）；POSIX 下收紧权限（目录 700 / 文件 600，凭据不可被其他用户读取） */
 export function saveState(state: AccountState): void {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
-  const tmpFile = `${ACCOUNT_FILE}.tmp`;
-  writeFileSync(tmpFile, JSON.stringify(state, null, 2), "utf8");
+  // 临时文件用随机名 + 独占创建 + 0o600：固定名可被本地攻击者预置符号链接，
+  // 且默认 umask 会让凭据在 rename 前有一段时间是 0664。
+  const tmpFile = `${ACCOUNT_FILE}.${randomUUID()}.tmp`;
+  const fd = openSync(tmpFile, "wx", 0o600);
+  try {
+    writeSync(fd, JSON.stringify(state, null, 2), null, "utf8");
+    fsyncSync(fd);
+  } catch (error) {
+    closeSync(fd);
+    try { unlinkSync(tmpFile); } catch { /* 清理失败不掩盖原始错误 */ }
+    throw error;
+  }
+  closeSync(fd);
   renameSync(tmpFile, ACCOUNT_FILE);
   if (process.platform !== "win32") {
     hardenStateDir();

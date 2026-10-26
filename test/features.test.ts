@@ -8,7 +8,7 @@ import { Scheduler } from "../src/features/scheduler.js";
 import { Approvals } from "../src/features/approvals.js";
 import { checkedPath } from "../src/features/policy.js";
 import { ConversationStore } from "../src/pi/conversation-store.js";
-import { acquireProcessLock } from "../src/daemon/process-lock.js";
+import { acquireProcessLock, readPidStamp, readProcessId } from "../src/daemon/process-lock.js";
 import { runSupervisor } from "../src/daemon/supervisor.js";
 import { existsSync } from "node:fs";
 import { uploadFile } from "../src/ilink/media.js";
@@ -67,8 +67,34 @@ describe("真实文件与持久状态", () => {
     expect(() => acquireProcessLock(file)).toThrow("已有进程");
     release();
     const releaseAgain = acquireProcessLock(file);
-    expect(await readFile(file, "utf8")).toBe(String(process.pid));
+    // PID 文件格式为 <pid> 或 <pid>:<startTime>（后者用于识别 PID 复用）
+    const stamp = readPidStamp(file);
+    expect(stamp?.pid).toBe(process.pid);
+    expect(await readFile(file, "utf8")).toMatch(new RegExp(`^${process.pid}(?::.+)?$`));
     releaseAgain();
+  });
+
+  it("进程锁内容非法时按无锁处理，不抛错", async () => {
+    const file = join(await directory(), "broken.pid");
+    for (const content of ["", "0", "garbage"]) {
+      await writeFile(file, content, "utf8");
+      expect(readProcessId(file)).toBeNull();
+    }
+    // 损坏内容不应阻止获取锁
+    const release = acquireProcessLock(file);
+    expect(readProcessId(file)).toBe(process.pid);
+    release();
+  });
+
+  it("回收被强杀进程留下的 .reclaim 残留，避免永久无法启动", async () => {
+    const file = join(await directory(), "stale.pid");
+    // 模拟：旧锁持有者已死，且回收过程中被强杀留下 .reclaim
+    await writeFile(file, "999999", "utf8");
+    await writeFile(`${file}.reclaim`, "999998", "utf8");
+    const release = acquireProcessLock(file);
+    expect(readProcessId(file)).toBe(process.pid);
+    expect(existsSync(`${file}.reclaim`)).toBe(false);
+    release();
   });
 
   it("已取消的文件回传直接终止，不发送上传请求", async () => {

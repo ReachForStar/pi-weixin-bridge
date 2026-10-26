@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { basename, join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { STATE_DIR, WORKSPACE } from "../config.js";
+import { logger } from "../logger/index.js";
 
 export class ConversationStore {
   constructor(
@@ -26,7 +27,18 @@ export class ConversationStore {
     const directory = this.directory(key);
     const pointer = join(directory, "current.json");
     if (!existsSync(pointer)) return this.reset(key);
-    const current: unknown = JSON.parse(readFileSync(pointer, "utf8"));
+    let current: unknown;
+    try {
+      current = JSON.parse(readFileSync(pointer, "utf8"));
+    } catch (error) {
+      // 索引损坏：隔离后重建指针，保住已有历史记录。
+      // 若直接抛错，/sessions 与 /resume 全部不可用，而用户唯一能用的 /new 会写新指针、
+      // 让原有历史彻底不可达——比损坏本身后果更严重。
+      const backup = `${pointer}.corrupt-${Date.now()}`;
+      try { renameSync(pointer, backup); } catch { /* 隔离失败也不阻断重建 */ }
+      logger.warn(`对话记录索引损坏（已隔离为 ${backup}），已重建指针：${String(error)}`);
+      return this.reset(key);
+    }
     if (!current || typeof current !== "object" || !("file" in current)
       || typeof current.file !== "string" || basename(current.file) !== current.file
       || /[\\/]/.test(current.file) || !current.file.endsWith(".jsonl")) {

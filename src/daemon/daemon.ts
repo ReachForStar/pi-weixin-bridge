@@ -14,7 +14,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_DIR } from "../config.js";
 import { hardenStateDir } from "../account.js";
-import { readProcessId } from "./process-lock.js";
+import { readProcessId, readPidStamp, pidIsOurs } from "./process-lock.js";
+import { matchesStartTime } from "./pid-identity.js";
+import { logger } from "../logger/index.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 /** 包根目录（src/daemon 的上两级） */
@@ -55,7 +57,13 @@ export function readPidOrNull(file: string): number | null {
 export function readRuntimeStatus(): { state: string; pid: number } | undefined {
   const file = join(DAEMON_DIR, "runtime.json");
   if (!existsSync(file)) return undefined;
-  return JSON.parse(readFileSync(file, "utf8")) as { state: string; pid: number };
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as { state: string; pid: number };
+  } catch (error) {
+    // 纯展示用状态文件：损坏不应阻断 start/stop/status 等全部运维入口
+    logger.warn(`runtime.json 无法解析（忽略）：${String(error)}`);
+    return undefined;
+  }
 }
 
 export interface DaemonStatus {
@@ -130,8 +138,16 @@ export async function startDaemon(): Promise<{ ok: boolean; message: string }> {
   return { ok: false, message: `桥接未就绪${spawnError ? `：${spawnError.message}` : ""}，请查看 ${BRIDGE_LOG_FILE} 和 ${SUPERVISOR_LOG_FILE}；守护进程可能仍在启动或重试` };
 }
 
-/** 杀掉 supervisor 及其子进程树 */
-export function killProcessTree(pid: number, force = true): void {
+/**
+ * 杀掉 supervisor 及其子进程树。
+ * expectedStartTime 存在时先校验 PID 身份：PID 被系统复用给无关进程时拒绝操作，
+ * 避免 daemon stop 误杀其他程序（POSIX 分支按进程组发信号，误杀会连带整组）。
+ */
+export function killProcessTree(pid: number, force = true, expectedStartTime?: string): void {
+  const identity = matchesStartTime(pid, expectedStartTime);
+  if (identity === "mismatch") {
+    throw new Error(`PID ${pid} 已被其他进程复用（启动时间不符），已拒绝发送信号；请手工检查 ${SUPERVISOR_PID_FILE}`);
+  }
   if (process.platform === "win32") {
     const result = spawnSync("taskkill", ["/pid", String(pid), "/t", ...(force ? ["/f"] : [])], { stdio: "ignore", windowsHide: true, timeout: 10_000 });
     if (result.error) throw result.error;
@@ -153,9 +169,10 @@ export function killProcessTree(pid: number, force = true): void {
 export async function stopDaemon(): Promise<{ stopped: boolean }> {
   const st = daemonStatus();
   if (!st.running) {
-    const orphan = readPidOrNull(BRIDGE_PID_FILE);
-    if (orphan && isPidAlive(orphan)) {
-      killProcessTree(orphan);
+    const orphanStamp = readPidStamp(BRIDGE_PID_FILE);
+    if (orphanStamp && pidIsOurs(orphanStamp.pid, orphanStamp.startTime)) {
+      const orphan = orphanStamp.pid;
+      killProcessTree(orphan, true, orphanStamp.startTime);
       await delay(100);
       if (isPidAlive(orphan)) throw new Error(`桥接进程 ${orphan} 未能停止，保留 PID 文件`);
       cleanupStalePids();
@@ -164,10 +181,11 @@ export async function stopDaemon(): Promise<{ stopped: boolean }> {
     cleanupStalePids();
     return { stopped: false };
   }
-  killProcessTree(st.supervisorPid!, process.platform === "win32");
+  const supervisorStamp = readPidStamp(SUPERVISOR_PID_FILE);
+  killProcessTree(st.supervisorPid!, process.platform === "win32", supervisorStamp?.startTime);
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline && isPidAlive(st.supervisorPid!)) await delay(100);
-  if (isPidAlive(st.supervisorPid!)) killProcessTree(st.supervisorPid!);
+  if (isPidAlive(st.supervisorPid!)) killProcessTree(st.supervisorPid!, true, supervisorStamp?.startTime);
   const finalDeadline = Date.now() + 5_000;
   while (Date.now() < finalDeadline && (isPidAlive(st.supervisorPid!) || (st.bridgePid && isPidAlive(st.bridgePid)))) await delay(100);
   if (isPidAlive(st.supervisorPid!) || (st.bridgePid && isPidAlive(st.bridgePid))) throw new Error("后台进程未能停止，保留 PID 文件供排查");
@@ -177,8 +195,9 @@ export async function stopDaemon(): Promise<{ stopped: boolean }> {
 
 function cleanupStalePids(): void {
   for (const file of [SUPERVISOR_PID_FILE, BRIDGE_PID_FILE]) {
-    const pid = readPidOrNull(file);
-    if (pid === null || !isPidAlive(pid)) rmSync(file, { force: true });
+    const stamp = readPidStamp(file);
+    // PID 已死或已被系统复用给其他进程时，该文件对我们已无意义
+    if (stamp === null || !pidIsOurs(stamp.pid, stamp.startTime)) rmSync(file, { force: true });
   }
 }
 

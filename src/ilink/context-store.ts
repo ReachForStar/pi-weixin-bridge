@@ -3,7 +3,8 @@
 // - typing ticket 带过期时间，过期后调用方应重新 getconfig 获取。
 // 存储于 STATE_DIR/context.json。
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { logger } from "../logger/index.js";
 
@@ -37,13 +38,31 @@ export class ContextStore {
     }
   }
 
-  /** 持久化到磁盘（写入失败仅告警，不中断） */
+  /**
+   * 持久化到磁盘（写入失败仅告警，不中断）。
+   * 含 context_token / typing_ticket 等敏感令牌：原子写 + 0o600，
+   * 与其他状态文件（state.ts / account.ts）保持一致，避免同机其他用户读取。
+   */
   save(): void {
     try {
-      mkdirSync(dirname(this.file), { recursive: true });
+      mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
       const data: ContextData = {};
       for (const [userId, entry] of this.store) data[userId] = entry;
-      writeFileSync(this.file, JSON.stringify(data, null, 2), "utf8");
+      const temporary = `${this.file}.${randomUUID()}.tmp`;
+      const fd = openSync(temporary, "wx", 0o600);
+      try {
+        writeSync(fd, JSON.stringify(data, null, 2), null, "utf8");
+        fsyncSync(fd);
+      } catch (error) {
+        closeSync(fd);
+        try { unlinkSync(temporary); } catch { /* 清理失败不掩盖原始错误 */ }
+        throw error;
+      }
+      closeSync(fd);
+      renameSync(temporary, this.file);
+      if (process.platform !== "win32") {
+        try { chmodSync(this.file, 0o600); } catch { /* 非属主不改主流程 */ }
+      }
     } catch (err) {
       logger.warn(`ContextStore 持久化失败: ${String(err)}`);
     }
