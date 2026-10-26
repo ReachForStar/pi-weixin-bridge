@@ -218,3 +218,11 @@ main CI 36811222768 三平台检查及 publish 全部成功，正式 GitHub Rele
 ## [2026-10-01] query | 核对 Issue 主要缺陷与附加建议范围
 
 对照当前代码与实测证据确认五项主要缺陷对应原因已处理。报告者附加提出的 last-error.txt 与 status 最近致命错误摘要尚未实现；显式旧路径不自动覆盖，模型错误人工测试覆盖连接失败。补充范围说明，未修改代码或发送新 Issue 评论。
+
+## [2026-10-26] fix | npm-token-check 权限与令牌到期日
+
+`check-token` job 原为空权限，`actions/github-script` 创建提醒 issue 报 403，令牌过期时收不到提醒。改为最小权限 `issues: write`，同时把 `TOKEN_EXPIRES` 同步为新令牌到期日 2027-01-24。手动触发工作流验证通过（`whoami=valid`、`status=ok`）。见 [令牌轮换排查](queries/npm-token-check-issue-permission.md)。
+
+## [2026-10-26] chore | 合并远端 main 并与本地提交收敛
+
+本地 main 落后远端 31 个提交，另有本地提交「归一化依赖锁文件源主机修复 EALLOWREMOTE」。以远端为基线合并，唯一冲突在 `package-lock.json`：取远端 1.7.1 结构后重新归一化全部 `resolved` 主机为 `registry.npmjs.org`（119 条 npmmirror），保留本地提交的变更意图。验证：`npm ci` 200 包干净安装、typecheck、build、155 项测试通过（7 项按平台跳过）。

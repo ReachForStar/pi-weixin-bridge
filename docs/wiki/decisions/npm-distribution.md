@@ -26,6 +26,6 @@ status: active
 
 ## 后果
 
-自启仍依赖 npm 包与 Node 路径存在；Node 安装路径变化后需要重新注册。卸载先停止服务和移除自启，再 npm uninstall -g pi-weixin-bridge；本地账号和配置保留。真实 CLI help 与 npm pack --dry-run 检查通过，包内包含完整 src、转换 worker 和双语 README，不包含 tmp/test；没有执行实际全局更新。用户已确认发布 1.7.0，npm 发布结果见[发布记录](../queries/release-1-7-0.md)。
+自启仍依赖 npm 包与 Node 路径存在；Node 安装路径变化后需要重新注册。卸载先停止服务和移除自启，再 npm uninstall -g pi-weixin-bridge；本地账号和配置保留。真实 CLI help 与 npm pack --dry-run 检查通过，包内包含完整 src、转换 worker 和双语 README，不包含 tmp/test；没有执行实际全局更新。用户已确认发布 1.7.0，npm 发布结果见[发布记录](../queries/release-1-7-0.md)。发布令牌为 Granular Access Token，到期需轮换 secret 与工作流内 `TOKEN_EXPIRES`，详见[令牌轮换排查](../queries/npm-token-check-issue-permission.md)。
 
 关联：[发布前人工确认](manual-release-confirmation.md)、[后台守护进程](../entities/background-daemon.md)、[供应方读取与会话模型配置](../entities/model-configuration.md)。
