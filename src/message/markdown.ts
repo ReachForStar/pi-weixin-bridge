@@ -49,6 +49,9 @@ export function quote(text: string): string {
     .join("\n");
 }
 
+/** 字素簇切分器：无状态可复用，避免每条出站消息都新建一个 */
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 /**
  * 将过长的文本按段落分块（微信单条消息有长度限制）。
  * 优先按换行分段，尽量在段落边界切分，避免破坏 markdown 结构。
@@ -75,11 +78,10 @@ export function chunkText(text: string, maxLen = 4000): string[] {
   // 区域指示符国旗（🇨🇳）都是多个码点组成的单个字素簇，切在中间同样会乱码。
   // Intl.Segmenter 按字素簇切分，从根本上避免拆散用户可见字符。
   const result: string[] = [];
-  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
   for (const chunk of chunks) {
     let current = "";
     let currentLen = 0;
-    for (const { segment } of segmenter.segment(chunk)) {
+    for (const { segment } of GRAPHEME_SEGMENTER.segment(chunk)) {
       if (currentLen + segment.length > maxLen && current) {
         result.push(current);
         current = "";

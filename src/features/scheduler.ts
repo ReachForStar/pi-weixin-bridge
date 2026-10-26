@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { CronExpressionParser } from "cron-parser";
 import { STATE_DIR } from "../config.js";
 import { readJson, saveJson } from "./state.js";
+import { logger } from "../logger/index.js";
 
 export interface ScheduledJob {
   id: string;
@@ -24,7 +25,14 @@ export class Scheduler {
   private jobs: ScheduledJob[];
   private readonly active = new Set<string>();
   constructor(private readonly file = join(STATE_DIR, "schedules.json")) {
-    this.jobs = readJson(file, []);
+    // 构造期在 Features/bridge 启动路径上：读取失败只降级为「无任务」，
+    // 不能让整个服务起不来。save() 不会自动触发，原文件在下次成功读取前不会被覆盖。
+    try {
+      this.jobs = readJson(file, []);
+    } catch (error) {
+      logger.warn(`schedules.json 读取失败，本次按无定时任务运行（原文件未改动）：${String(error)}`);
+      this.jobs = [];
+    }
     let changed = false;
     for (const job of this.jobs) if (job.status === "running") {
       job.status = "interrupted"; job.enabled = false; changed = true;
@@ -64,9 +72,10 @@ export class Scheduler {
     this.save();
   }
   async tick(account: string, execute: (job: ScheduledJob) => Promise<void>, signal?: AbortSignal): Promise<void> {
+    // 串行执行：一个 tick 内逐个 await，跨 tick 由 active 集合防重入；不引入并发上限（串行下无意义）
     for (const job of this.jobs) {
       if (signal?.aborted) break;
-      if (!job.enabled || job.account !== account || job.nextAt > Date.now() || this.active.has(job.id) || this.active.size >= 2) continue;
+      if (!job.enabled || job.account !== account || job.nextAt > Date.now() || this.active.has(job.id)) continue;
       this.active.add(job.id);
       job.status = "running"; job.lastRun = Date.now(); this.save();
       try { await execute({ ...job }); job.status = "completed"; job.lastError = undefined; }

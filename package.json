@@ -30,7 +30,7 @@
     "typecheck": "tsc -p tsconfig.check.json",
     "pretest": "node scripts/clean-tmp.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "node scripts/clean-tmp.mjs && vitest"
   },
   "keywords": [
     "weixin",

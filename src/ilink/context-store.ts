@@ -3,9 +3,8 @@
 // - typing ticket 带过期时间，过期后调用方应重新 getconfig 获取。
 // 存储于 STATE_DIR/context.json。
 
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "../fs-atomic.js";
 import { logger } from "../logger/index.js";
 
 interface ContextEntry {
@@ -45,24 +44,11 @@ export class ContextStore {
    */
   save(): void {
     try {
-      mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
       const data: ContextData = {};
       for (const [userId, entry] of this.store) data[userId] = entry;
-      const temporary = `${this.file}.${randomUUID()}.tmp`;
-      const fd = openSync(temporary, "wx", 0o600);
-      try {
-        writeSync(fd, JSON.stringify(data, null, 2), null, "utf8");
-        fsyncSync(fd);
-      } catch (error) {
-        closeSync(fd);
-        try { unlinkSync(temporary); } catch { /* 清理失败不掩盖原始错误 */ }
-        throw error;
-      }
-      closeSync(fd);
-      renameSync(temporary, this.file);
-      if (process.platform !== "win32") {
-        try { chmodSync(this.file, 0o600); } catch { /* 非属主不改主流程 */ }
-      }
+      // 含 context_token / typing_ticket 等敏感令牌：共享原子写已保证 0o600、
+      // 循环写满、rename 失败清理临时文件；无需在 rename 后再 chmod（临时文件本就是 0o600，rename 保留模式）。
+      writeFileAtomic(this.file, JSON.stringify(data, null, 2), 0o600);
     } catch (err) {
       logger.warn(`ContextStore 持久化失败: ${String(err)}`);
     }

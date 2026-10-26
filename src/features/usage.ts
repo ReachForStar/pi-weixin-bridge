@@ -11,11 +11,13 @@ export class UsageLedger {
   }
   today(key: string): UsageDay { return this.state.get(key)[this.day()] ?? { tokens: 0, cost: 0, turns: 0, unknown: 0 }; }
   add(key: string, tokens: number, cost: number, known: boolean): void {
+    // 非有限数值或负数一律按 0 记账：NaN/Infinity 会永久污染当日账本且无法恢复
+    const safeNumber = (value: number) => (Number.isFinite(value) && value >= 0 ? value : 0);
     const days = this.state.get(key);
     const current = this.today(key);
     current.turns++;
     if (!known) current.unknown++;
-    current.tokens += tokens; current.cost += cost;
+    current.tokens += safeNumber(tokens); current.cost += safeNumber(cost);
     days[this.day()] = current;
     this.state.set(key, days);
   }

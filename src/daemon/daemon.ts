@@ -32,8 +32,8 @@ export const SUPERVISOR_PID_FILE = join(DAEMON_DIR, "supervisor.pid");
 export const BRIDGE_PID_FILE = join(DAEMON_DIR, "bridge.pid");
 export const BRIDGE_LOG_FILE = join(DAEMON_DIR, "bridge.log");
 export const SUPERVISOR_LOG_FILE = join(DAEMON_DIR, "supervisor.log");
-/** supervisor.log 轮转阈值（与 supervisor.ts 的 bridge.log 一致） */
-const SUPERVISOR_LOG_ROTATE_BYTES = 5 * 1024 * 1024;
+/** 日志轮转阈值：bridge.log 与 supervisor.log 共用，用代码而非注释保证一致 */
+export const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
 export const BASE_BACKOFF_MS = 3_000;
 export const MAX_BACKOFF_MS = 60_000;
@@ -87,14 +87,16 @@ export function readRestartCount(daemonDir: string = DAEMON_DIR): number {
 }
 
 export function daemonStatus(): DaemonStatus {
-  const supervisorPid = readPidOrNull(SUPERVISOR_PID_FILE);
-  const running = supervisorPid !== null && isPidAlive(supervisorPid);
+  const supervisor = readPidStamp(SUPERVISOR_PID_FILE);
+  // 身份校验必须在这里做：PID 被系统复用时仅凭 isPidAlive 会误判为「运行中」，
+  // 导致 stop 因 mismatch 抛错、start 又提前返回「已运行」，两者都卡死，用户只能手工删文件。
+  const running = supervisor !== null && pidIsOurs(supervisor.pid, supervisor.startTime);
   if (!running) return { running: false };
-  const bridgePid = readPidOrNull(BRIDGE_PID_FILE);
+  const bridge = readPidStamp(BRIDGE_PID_FILE);
   return {
     running: true,
-    supervisorPid,
-    bridgePid: bridgePid !== null && isPidAlive(bridgePid) ? bridgePid : undefined,
+    supervisorPid: supervisor.pid,
+    bridgePid: bridge !== null && pidIsOurs(bridge.pid, bridge.startTime) ? bridge.pid : undefined,
   };
 }
 
@@ -116,8 +118,13 @@ export async function startDaemon(): Promise<{ ok: boolean; message: string }> {
   mkdirSync(DAEMON_DIR, { recursive: true });
   hardenStateDir(); // 凭据所在目录，POSIX 下收紧为 700
   // supervisor.log 只有 daemon start 会打开写入，在此处轮转即可（supervisor 自身无法安全轮转自己的 stdout）
-  if (existsSync(SUPERVISOR_LOG_FILE) && statSync(SUPERVISOR_LOG_FILE).size > SUPERVISOR_LOG_ROTATE_BYTES) {
-    renameSync(SUPERVISOR_LOG_FILE, `${SUPERVISOR_LOG_FILE}.1`);
+  try {
+    if (existsSync(SUPERVISOR_LOG_FILE) && statSync(SUPERVISOR_LOG_FILE).size > LOG_ROTATE_BYTES) {
+      renameSync(SUPERVISOR_LOG_FILE, `${SUPERVISOR_LOG_FILE}.1`);
+    }
+  } catch (error) {
+    // 轮转失败只降级：旧日志可继续追加，不应阻断 daemon start（Windows 上句柄未释放会 EPERM）
+    logger.warn(`supervisor.log 轮转失败（忽略）：${String(error)}`);
   }
   const fd = openSync(SUPERVISOR_LOG_FILE, "a");
   const child = spawn(process.execPath, [BIN_PATH, "daemon", "supervise"], {
@@ -154,7 +161,7 @@ export async function startDaemon(): Promise<{ ok: boolean; message: string }> {
 export function killProcessTree(pid: number, force = true, expectedStartTime?: string): void {
   const identity = matchesStartTime(pid, expectedStartTime);
   if (identity === "mismatch") {
-    throw new Error(`PID ${pid} 已被其他进程复用（启动时间不符），已拒绝发送信号；请手工检查 ${SUPERVISOR_PID_FILE}`);
+    throw new Error(`PID ${pid} 已被其他进程复用（启动时间不符），已拒绝发送信号；请手工检查 ${DAEMON_DIR} 下的 PID 文件`);
   }
   if (process.platform === "win32") {
     const result = spawnSync("taskkill", ["/pid", String(pid), "/t", ...(force ? ["/f"] : [])], { stdio: "ignore", windowsHide: true, timeout: 10_000 });

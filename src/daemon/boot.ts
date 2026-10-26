@@ -14,13 +14,26 @@ const TASK_NAME = "pi-weixin-bridge";
 /** 注册开机自启任务（已存在则覆盖） */
 function installBootWindows(): { ok: boolean; message: string } {
   if (!existsSync(WINDOWS_HELPER)) return { ok: false, message: "npm 包缺少 Windows 系统辅助脚本，请重新安装" };
-  runWindowsHelper(["task-install", process.execPath, BIN_PATH, "start", STATE_DIR, WORKSPACE, MODEL_REF, process.env.PI_CODING_AGENT_DIR ?? ""]);
-  return { ok: true, message: `已注册计划任务 ${TASK_NAME}（用户登录时隐藏启动，无需 PowerShell）` };
+  try {
+    runWindowsHelper(["task-install", process.execPath, BIN_PATH, "start", STATE_DIR, WORKSPACE, MODEL_REF, process.env.PI_CODING_AGENT_DIR ?? ""]);
+    return { ok: true, message: `已注册计划任务 ${TASK_NAME}（用户登录时隐藏启动，无需 PowerShell）` };
+  } catch (error) {
+    return { ok: false, message: `注册计划任务失败：${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 function uninstallBootWindows(): { ok: boolean; message: string } {
-  runWindowsHelper(["task-remove"]);
-  return { ok: true, message: `已移除计划任务 ${TASK_NAME}` };
+  try {
+    runWindowsHelper(["task-remove"]);
+    return { ok: true, message: `已移除计划任务 ${TASK_NAME}` };
+  } catch (error) {
+    // 任务不存在时按未注册处理，不当作失败
+    const text = String(error);
+    if (/找不到|does not exist|0x80070002|not exist/i.test(text)) {
+      return { ok: true, message: "未注册计划任务，无需移除" };
+    }
+    return { ok: false, message: `移除计划任务失败：${text}` };
+  }
 }
 
 // ---------- Linux：systemd 用户服务 ----------

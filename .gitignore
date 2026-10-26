@@ -24,3 +24,6 @@ secrets/
 docs/*
 !docs/wiki/
 
+# 本地审查工具与输出（非项目产物）
+.tools/
+.ocr-out/

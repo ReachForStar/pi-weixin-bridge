@@ -62,10 +62,9 @@ export interface WizardChoice {
 }
 
 /** 实际写删探针文件验证目录可写 */
-function checkWritable(dir: string): string | null {
+function checkWritable(dir: string, mode = 0o700): string | null {
   try {
-    // 以 0o700 创建：状态目录存放凭据，不能因 umask 宽松而对同机其他用户可读
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    mkdirSync(dir, { recursive: true, mode });
     const probe = join(dir, `.write-test-${process.pid}`);
     const fd = openSync(probe, "w");
     closeSync(fd);
@@ -117,11 +116,12 @@ export async function runInstallWizard(
     );
   }
 
-  for (const [label, dir] of [
-    ["状态目录", stateDir],
-    ["pi 工作目录", workspace],
+  // 状态目录存放凭据，收紧为 0700；工作目录是 Agent 读写位置，保持默认权限
+  for (const [label, dir, mode] of [
+    ["状态目录", stateDir, 0o700],
+    ["pi 工作目录", workspace, 0o755],
   ] as const) {
-    const err = checkWritable(dir);
+    const err = checkWritable(dir, mode);
     if (err) {
       throw new Error(`${label}不可写：${dir}\n   ${err}\n   请换一个有写权限的目录（或检查磁盘/权限设置）后重试。`);
     }

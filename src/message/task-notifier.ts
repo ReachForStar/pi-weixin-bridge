@@ -18,14 +18,32 @@ export class TaskNotifier {
   private timer?: ReturnType<typeof setInterval>;
   private pending: Promise<void> = Promise.resolve();
   private closed = false;
+  /** 是否已发出过终态文案（结束语/错误/回复），用于决定是否需要兜底结束消息 */
+  private ended = false;
+  /** 是否曾启动过进度定时器（finish 时定时器可能已被 stopProgress 清掉） */
+  private hadTimer = false;
 
   constructor(private readonly send: (text: string) => Promise<void>, private readonly intervalMs = 30_000) {
     if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) throw new RangeError("通知间隔必须为正整数");
   }
 
+  /** 标记本轮已有终态输出（如正文回复），避免 finish() 再追加兜底结束语 */
+  markReplied(): void {
+    this.ended = true;
+  }
+
   private enqueue(text: string): void {
+    // 已关闭后不再接受任何消息：否则定时器最后一跳可能把「仍在进行」排在结束文案之后
+    if (this.closed) return;
     this.pending = this.pending.then(() => this.send(text)).catch((error) => {
       // 通知通道故障单独记录，避免把发送故障误报为 Agent 任务失败。
+      logger.warn(`[notify] 任务通知发送失败: ${String(error)}`);
+    });
+  }
+
+  /** finish 专用入队：先入队再关闭，保证结束文案本身能发出 */
+  private enqueueFinal(text: string): void {
+    this.pending = this.pending.then(() => this.send(text)).catch((error) => {
       logger.warn(`[notify] 任务通知发送失败: ${String(error)}`);
     });
   }
@@ -33,6 +51,7 @@ export class TaskNotifier {
   start(): void {
     if (this.closed || this.timer) return;
     this.enqueue("⏳ 已收到消息，开始处理任务。");
+    this.hadTimer = true;
     this.timer = setInterval(() => {
       const seconds = Math.floor((Date.now() - this.started) / 1000);
       this.enqueue(`⏳ 任务仍在进行\n\n- 进度：${this.stage}\n- 已用时：${seconds} 秒\n- 已结束的工具调用：${this.completedTools} 次`);
@@ -65,14 +84,23 @@ export class TaskNotifier {
       await this.pending;
       return;
     }
+    // 先清定时器再入队结束文案：彻底关掉并发的进度消息来源
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+    if (message) {
+      this.ended = true;
+      this.enqueueFinal(message);
+    } else if (!this.ended && this.hadTimer) {
+      // 仅对真正没有输出终态的路径兜底；曾启动过定时器不代表没发过回复
+      this.enqueueFinal("✅ 本轮处理已结束。");
+    }
     this.closed = true;
-    if (message) this.enqueue(message);
-    else if (this.timer) this.enqueue("✅ 本轮处理已结束。");
     await this.stopProgress();
   }
 
   async stopProgress(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
+    this.hadTimer ||= Boolean(this.timer);
     this.timer = undefined;
     await this.pending;
   }

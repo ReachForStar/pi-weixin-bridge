@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { readFile, stat, unlink } from "node:fs/promises";
+import { readFile, stat, unlink, readdir, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { formatFromBytes, formatFromPath } from "@firecrawl/anydoc";
@@ -44,6 +44,23 @@ async function reusableOutput(input: string, output: string, inputBytes: Buffer)
   }
 }
 
+/**
+ * 清理上一次转换残留的中间产物：worker 的临时文件与失败留下的 assets 目录。
+ * 超时/中止强杀 worker 时这些文件无人回收，会永久堆积在媒体目录里。
+ */
+async function sweepStaleArtifacts(output: string): Promise<void> {
+  const dir = dirname(output);
+  const prefix = `${basename(output)}.`;
+  try {
+    for (const name of await readdir(dir)) {
+      if (!name.startsWith(prefix) || !name.endsWith(".tmp")) continue;
+      try { await unlink(join(dir, name)); } catch { /* 被占用则跳过 */ }
+    }
+  } catch {
+    // 目录不可读：跳过清理，不影响主流程
+  }
+}
+
 export class DocumentConversionError extends Error {
   constructor(public readonly notice: string, cause: unknown) {
     super(`入站文档转换失败: ${String(cause)}`, { cause });
@@ -83,7 +100,9 @@ export async function prepareInboundDocuments(
         for (const stale of [output, `${output}.meta.json`]) {
           try { await unlink(stale); } catch { /* 不存在即可 */ }
         }
-        // 转换期间被中断时可能只留下 .tmp，一并清理
+        // 清理上次被强杀残留的临时文件（output.<uuid>.tmp / output.meta.json.<uuid>.tmp）
+        // 以及失败转换留下的 assets 目录，避免在工作目录里永久堆积
+        await sweepStaleArtifacts(output);
         const { stdout } = await run(process.execPath, [WORKER, input, output, options.ocr ?? "reject", format], {
           signal: options.signal,
           timeout: CONVERSION_TIMEOUT_MS,
@@ -94,7 +113,13 @@ export async function prepareInboundDocuments(
         assets = (JSON.parse(stdout) as { assets: string[] }).assets;
         // 工作进程写完后复核一次：确认产物真的完整，而不是"文件碰巧存在"
         reusable = await reusableOutput(input, output, inputBytes);
-        if (!reusable) throw new Error("转换产物校验未通过（文件不完整）");
+        if (!reusable) {
+          // 独立 code：产物校验失败说明 worker 跑过但结果不完整（中断/临时存储异常），
+          // 与「源文件损坏」是两回事，不能共用一句会把用户引向错误方向的文案
+          const verifyError = new Error("转换产物校验未通过（文件不完整）") as Error & { code?: string };
+          verifyError.code = "EOUTPUTVERIFY";
+          throw verifyError;
+        }
       }
       options.onConverted?.(input, assets);
       notes.push([
@@ -113,11 +138,15 @@ export async function prepareInboundDocuments(
       let notice: string;
       if (code === 3) {
         notice = "⚠️ 此 PDF 包含需要 OCR 的扫描页。原文件已保留，未上传外部服务；云端 OCR 需要先确认上传到 Firecrawl。";
+      } else if (code === "EOUTPUTVERIFY") {
+        notice = "⚠️ 附件已转换但产物校验失败（文件不完整）。已丢弃该产物，请重新发送该文件；若反复出现请检查磁盘空间。";
       } else if (timedOut) {
         notice = `⚠️ 附件转换超时（超过 ${Math.round(CONVERSION_TIMEOUT_MS / 1000)} 秒）或被中止，已放弃本次转换。原文件已保留，可稍后重新发送该文件。`;
       } else {
         notice = "⚠️ 附件转换为 Markdown 失败，原文件已保留。请检查文件是否损坏或加密，详细原因已记录到服务日志。";
       }
+      // 失败时清掉本次可能的 assets 目录，避免游离资源永久占用空间
+      await rm(`${output}.assets`, { recursive: true, force: true }).catch(() => { /* 清理失败不影响报错 */ });
       throw new DocumentConversionError(notice, error);
     }
   }

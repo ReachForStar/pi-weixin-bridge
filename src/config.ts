@@ -1,5 +1,5 @@
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "./fs-atomic.js";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -99,20 +99,9 @@ export function saveSettings(patch: BridgeSettings): void {
   }
   validateSettings(next);
   mkdirSync(BOOTSTRAP_DIR, { recursive: true });
-  const temporary = `${CONFIG_FILE}.${randomUUID()}.tmp`;
-  // fsync 后才能 rename：否则断电可能留下 0 字节 config.json，
-  // 而 loadSettings 在模块加载期执行，会让 CLI 全线不可用
-  const fd = openSync(temporary, "wx", 0o600);
-  try {
-    writeSync(fd, JSON.stringify(next, null, 2), null, "utf8");
-    fsyncSync(fd);
-  } catch (error) {
-    closeSync(fd);
-    try { unlinkSync(temporary); } catch { /* 清理失败不掩盖原始错误 */ }
-    throw error;
-  }
-  closeSync(fd);
-  renameSync(temporary, CONFIG_FILE);
+  // 共享原子写：循环写满 + fsync 文件与父目录，避免断电留下 0 字节 config.json
+  // （loadSettings 在模块加载期执行，配置损坏会让 CLI 全线不可用）
+  writeFileAtomic(CONFIG_FILE, JSON.stringify(next, null, 2), 0o600);
 }
 
 /** 桥接版本（读包根 package.json；dist 与 src 下均指向仓库/包根） */

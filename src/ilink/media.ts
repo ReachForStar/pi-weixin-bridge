@@ -49,31 +49,40 @@ function buildCdnUploadUrl(uploadParam: string, filekey: string): string {
 
 const CDN_FETCH_TIMEOUT_MS = 120_000; // 大文件给足时间
 const CDN_FETCH_RETRIES = 3;
-/** 下载期间的内存上限（明文 + 解密副本，故取配置值的一半；配置在调用侧另有最终校验） */
-const DOWNLOAD_MEMORY_CAP = 64 * 1024 * 1024;
+/**
+ * 下载阶段的内存硬上限（未传 maxFileBytes 时的兜底）。
+ * 这是「服务器自我保护」的绝对上限，不随配置放宽；配置更小时以配置为准。
+ */
+const DOWNLOAD_HARD_CAP = 64 * 1024 * 1024;
 
 /** 流式读取响应体，超过 maxBytes 立即中止，避免大文件先占满内存再被拒 */
 async function readBodyCapped(res: Response, maxBytes: number): Promise<Buffer> {
-  const declared = Number(res.headers.get("content-length"));
+  const header = res.headers.get("content-length");
+  const declared = header === null ? undefined : Number(header);
   // content-length 是密文长度；解密后不超过它，可作为提前拒绝的依据
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    throw new Error(`CDN 下载失败 413: 文件过大（${declared} 字节，上限 ${maxBytes}）`);
+  if (declared !== undefined && Number.isFinite(declared) && declared > maxBytes) {
+    // 未消费的响应体会占住连接，抛出前先取消
+    await res.body?.cancel().catch(() => { /* 取消失败不影响抛出 */ });
+    throw new MediaTooLargeError(declared, maxBytes);
   }
   if (!res.body) return Buffer.alloc(0);
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
     total += chunk.byteLength;
-    if (total > maxBytes) {
-      throw new Error(`CDN 下载失败 413: 文件过大（已读 ${total} 字节，上限 ${maxBytes}）`);
-    }
+    if (total > maxBytes) throw new MediaTooLargeError(total, maxBytes);
     chunks.push(Buffer.from(chunk));
   }
-  return Buffer.concat(chunks);
+  const joined = Buffer.concat(chunks);
+  // 声明长度与实际不符说明响应被截断：交给重试，而不是让解密报无从理解的填充错误
+  if (declared !== undefined && Number.isFinite(declared) && joined.length !== declared) {
+    throw new Error(`CDN 响应被截断（声明 ${declared} 字节，实收 ${joined.length} 字节）`);
+  }
+  return joined;
 }
 
 /** 下载 CDN 字节：超时 + 重试（terminated 等瞬时断连重拉；4xx 不重试——签名/参数错误重试无意义） */
-async function fetchCdnBytes(url: string, signal?: AbortSignal, maxBytes = DOWNLOAD_MEMORY_CAP): Promise<Buffer> {
+async function fetchCdnBytes(url: string, signal?: AbortSignal, maxBytes = DOWNLOAD_HARD_CAP): Promise<Buffer> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= CDN_FETCH_RETRIES; attempt++) {
     try {
@@ -85,7 +94,8 @@ async function fetchCdnBytes(url: string, signal?: AbortSignal, maxBytes = DOWNL
     } catch (err) {
       signal?.throwIfAborted();
       lastErr = err;
-      // 4xx 与超限都是确定性失败，重试无意义
+      // 确定性失败（4xx / 超限）重试无意义
+      if (err instanceof MediaTooLargeError) break;
       if (/CDN 下载失败 4\d\d/.test(String(err))) break;
       if (attempt < CDN_FETCH_RETRIES) {
         logger.warn(`[media] CDN 下载第 ${attempt} 次失败（${String(err)}），${500 * attempt}ms 后重试`);
@@ -139,7 +149,22 @@ export class MediaDownloadError extends Error {
   }
 }
 
-export async function downloadInboundMedia(items?: MessageItem[], signal?: AbortSignal, workspace = WORKSPACE, maxFileBytes = DOWNLOAD_MEMORY_CAP): Promise<InboundMedia> {
+/**
+ * 附件超过配置上限。单独的「超大」类型：可透传明确文案给用户，
+ * 不能被包成通用的「下载失败」（会把用户引向错误的排查方向）。
+ */
+export class MediaTooLargeError extends Error {
+  readonly notice: string;
+  constructor(size: number | undefined, limit: number) {
+    super(size === undefined ? `附件超过大小上限 ${limit} 字节` : `附件过大（${size} 字节，上限 ${limit} 字节）`);
+    this.name = "MediaTooLargeError";
+    this.notice = size === undefined
+      ? `⚠️ 附件超过大小上限（${limit} 字节）。请压缩或拆分后重新发送。`
+      : `⚠️ 附件过大（${size} 字节，上限 ${limit} 字节）。请压缩或拆分后重新发送。`;
+  }
+}
+
+export async function downloadInboundMedia(items?: MessageItem[], signal?: AbortSignal, workspace = WORKSPACE, maxFileBytes = DOWNLOAD_HARD_CAP): Promise<InboundMedia> {
   signal?.throwIfAborted();
   const result: InboundMedia = { images: [], notes: [], files: [] };
   if (!items?.length) return result;
@@ -160,6 +185,8 @@ export async function downloadInboundMedia(items?: MessageItem[], signal?: Abort
         const buf = aesKeyB64
           ? await downloadAndDecrypt(img.media?.encrypt_query_param ?? "", aesKeyB64, img.media?.full_url, signal, downloadCap)
           : await downloadPlain(img.media?.encrypt_query_param ?? "", img.media?.full_url, signal, downloadCap);
+        // 图片此前完全没有走上限校验；base64 还会额外膨胀约 1.33 倍，必须同样拦截
+        if (buf.length > maxFileBytes) throw new MediaTooLargeError(buf.length, maxFileBytes);
         result.images.push({ mimeType: detectImageMime(buf), data: buf.toString("base64") });
       } else if (item.type === MessageItemType.VOICE) {
         // 有语音转文字时由 extractText 提取为正文，这里仅在无文字时补充说明
@@ -193,6 +220,8 @@ export async function downloadInboundMedia(items?: MessageItem[], signal?: Abort
       }
     } catch (err) {
       signal?.throwIfAborted();
+      // 超限是用户可理解的原因，直接透传，不包成通用的「下载失败」
+      if (err instanceof MediaTooLargeError) throw err;
       throw new MediaDownloadError(err);
     }
   }

@@ -14,12 +14,14 @@ export interface IncomingMessage {
   hasVoice: boolean;
   hasFile: boolean;
   hasVideo: boolean;
+  /** 已归一化的媒体项：下游（如媒体下载）必须消费这个数组，而不是 raw.item_list */
+  items: MessageItem[];
   /** 原始消息（供需要完整信息时使用） */
   raw: WeixinMessage;
 }
 
 /** 把不可信的 item_list 规范化为数组：非数组/含非对象元素时安全降级，避免下游抛 TypeError */
-function normalizeItems(items: unknown): MessageItem[] {
+export function normalizeItems(items: unknown): MessageItem[] {
   if (!Array.isArray(items)) return [];
   return items.filter((item): item is MessageItem => Boolean(item) && typeof item === "object");
 }
@@ -52,6 +54,7 @@ export function parseIncomingMessage(msg: WeixinMessage): IncomingMessage {
     contextToken: typeof msg.context_token === "string" ? msg.context_token : undefined,
     text: extractText(items),
     ...detectMedia(items),
+    items,
     raw: msg,
   };
 }

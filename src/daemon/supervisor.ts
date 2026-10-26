@@ -23,14 +23,14 @@ import {
   nextBackoffMs,
   readPidOrNull,
   killProcessTree,
+  LOG_ROTATE_BYTES,
 } from "./daemon.js";
 import { acquireProcessLock } from "./process-lock.js";
-import { formatPidFile } from "./pid-identity.js";
+import { writePidFiles } from "./pid-identity.js";
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/** 日志轮转阈值：超过后滚动为 .1（覆盖旧备份，避免后台服务无限增长） */
-const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
+// 日志轮转阈值复用 daemon.ts 的共享常量，避免两份字面量漂移
 
 export interface SupervisorOptions {
   /** 子进程参数（默认：bin 包装器 start，即桥接服务）；测试可注入任意 node 参数 */
@@ -72,9 +72,13 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
   try {
   writeFileSync(restartFile, "0", "utf8");
   while (!shouldStop()) {
-    // 每次拉起前检查日志体积，超阈值滚动
-    if (existsSync(bridgeLog) && statSync(bridgeLog).size > LOG_ROTATE_BYTES) {
-      renameSync(bridgeLog, `${bridgeLog}.1`);
+    // 每次拉起前检查日志体积，超阈值滚动；失败只降级（Windows 句柄未释放会 EPERM），不中断重启循环
+    try {
+      if (existsSync(bridgeLog) && statSync(bridgeLog).size > LOG_ROTATE_BYTES) {
+        renameSync(bridgeLog, `${bridgeLog}.1`);
+      }
+    } catch (error) {
+      logger.warn(`bridge.log 轮转失败（忽略，旧日志继续追加）：${String(error)}`);
     }
     const logFd = openSync(bridgeLog, "a");
     const startedAt = Date.now();
@@ -85,10 +89,10 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
       env: { ...process.env, PI_WEIXIN_HEADLESS: "1" },
     });
     closeSync(logFd);
-    // spawn 失败时 child.pid 为 undefined：此时不写 PID 文件（写 "0" 会被判定为损坏锁）
-    if (child.pid) writeFileSync(bridgePidFile, formatPidFile(child.pid), "utf8");
-    else rmSync(bridgePidFile, { force: true });
-    logger.info(`[supervisor] 桥接进程已启动 pid=${child.pid}`);
+    // spawn 失败时 child.pid 为 undefined：不写 PID 文件（写 "0" 会被判定为损坏锁）
+    writePidFiles(bridgePidFile, child.pid);
+    if (child.pid) logger.info(`[supervisor] 桥接进程已启动 pid=${child.pid}`);
+    else logger.warn("[supervisor] 桥接进程未能启动（spawn 未返回 pid），等待错误事件");
 
     const code = await new Promise<number | null>((resolve) => {
       let requested = false;

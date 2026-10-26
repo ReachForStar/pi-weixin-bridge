@@ -1,9 +1,9 @@
 import { IlinkClient, SessionTimeoutError } from "./ilink/client.js";
 import { AuthError, ProtocolError } from "./ilink/errors.js";
 import { MessageType, TypingStatus, type WeixinMessage } from "./ilink/types.js";
-import { downloadInboundMedia, MediaDownloadError, uploadImage, uploadFile } from "./ilink/media.js";
+import { downloadInboundMedia, MediaDownloadError, MediaTooLargeError, uploadImage, uploadFile } from "./ilink/media.js";
 import { ContextStore } from "./ilink/context-store.js";
-import { isProcessable, parseIncomingMessage } from "./message/parser.js";
+import { isProcessable, normalizeItems, parseIncomingMessage } from "./message/parser.js";
 import { buildImageMessage, buildTextMessage, buildFileMessage } from "./message/builder.js";
 import { chunkText } from "./message/markdown.js";
 import { TaskNotifier } from "./message/task-notifier.js";
@@ -215,7 +215,7 @@ export class Bridge {
         return "stopped";
       }
       await notifier.finish(error instanceof DocumentConversionError || error instanceof MediaDownloadError
-        || error instanceof CommandExecutionError || error instanceof UserFacingError
+        || error instanceof MediaTooLargeError || error instanceof CommandExecutionError || error instanceof UserFacingError
         ? error.notice : "⚠️ 本次任务处理失败，请检查模型配置和服务日志后重试。");
       throw error;
     } finally {
@@ -254,7 +254,11 @@ export class Bridge {
       if (signal.aborted || error instanceof DocumentConversionError) throw error;
       throw new CommandExecutionError(error);
     }
-    if (featureReply?.reply !== undefined) { await sendText(featureReply.reply); return; }
+    if (featureReply?.reply !== undefined) {
+      notifier.markReplied();
+      await sendText(featureReply.reply);
+      return;
+    }
     if (featureReply?.prompt) text = featureReply.prompt;
 
     // 斜杠命令优先处理（不经过 pi）
@@ -269,20 +273,24 @@ export class Bridge {
     } });
     if (slashReply !== null) {
       logger.info(`[cmd] ${from}: ${text}`);
+      notifier.markReplied();
       await sendText(slashReply);
       return;
     }
 
     if (!text.trim() && !msg.item_list?.length) return;
     const profile = this.features.policy.profile(key, from);
-    notifier.start();
+    // 不在此处 start()：由 handleMessage 依据 isProcessable 判断，避免「未识别类型」
+    // 先收到「开始处理任务」再收到「没有可处理内容」的错位序列。
     // 入站媒体：图片转 base64 供 pi 视觉；文件/视频落盘并以说明注入
     notifier.update({ stage: "downloading" });
-    // 带上配置上限：下载阶段就拒绝超大文件，避免先占满内存/写盘再被拒
-    const media = await downloadInboundMedia(msg.item_list, signal, profile.workspace, this.features.policy.maxFileBytes());
+    // 带上配置上限：下载阶段就拒绝超大文件，避免先占满内存/写盘再被拒。
+    // 超限由 downloadInboundMedia 抛 MediaTooLargeError（含具体字节数），此处不再重复判定。
+    const maxFileBytes = this.features.policy.maxFileBytes();
+    // 必须消费归一化后的数组：raw.item_list 可能含 null/原始值，会让下载循环抛 TypeError
+    const media = await downloadInboundMedia(normalizeItems(msg.item_list), signal, profile.workspace, maxFileBytes);
     const files = [];
     for (const file of media.files) {
-      if ((await stat(file.path)).size > this.features.policy.maxFileBytes()) throw new UserFacingError("附件超过配置大小上限");
       files.push(await this.features.library.add(key, file, profile.workspace));
     }
     if (recordId) this.features.journal.update(key, recordId, { files: files.map((file) => file.id) });
@@ -296,7 +304,7 @@ export class Bridge {
     // 到此仍无内容：明确告诉用户「这条消息无法处理」，而不是静默结束，
     // 否则配合已发出的「开始处理任务」会让任务永远看起来卡住。
     if (!promptText.trim()) {
-      await sendText("⚠️ 这条消息没有可处理的内容（可能是空消息或暂不支持的消息类型）。请直接发送文字，或重新发送附件。");
+      await notifier.finish("⚠️ 这条消息没有可处理的内容（可能是空消息或暂不支持的消息类型）。请直接发送文字，或重新发送附件。");
       return;
     }
     signal.throwIfAborted();
@@ -340,6 +348,7 @@ export class Bridge {
     }
     logger.info(`[out] → ${from}: ${reply.length > 80 ? `${reply.slice(0, 80)}…` : reply}`);
     // 长文本分块发送，避免超出微信单条消息长度限制
+    notifier.markReplied();
     await sendText(reply);
   }
 

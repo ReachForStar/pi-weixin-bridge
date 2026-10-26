@@ -48,7 +48,10 @@ export class Features {
       } catch (error) {
         // 扫描 PDF 的提示统一由 DocumentConversionError.notice 发出（含文件编号与 /ocr 指引），
         // 这里不再重复发送，否则同一份文件会收到两条几乎相同的提示。
-        if (this.library.get(ctx.key, entry.id).needsOcr) {
+        // 用本次错误的 cause.code 判断，而不是持久化的 needsOcr 标记：
+        // 该标记一旦置 true 会一直保留，会把后续超时/损坏失败也误报成「需要 OCR」
+        const cause = (error as { cause?: { code?: string | number } }).cause;
+        if (cause?.code === 3) {
           throw new DocumentConversionError(
             `⚠️ 此 PDF 包含需要 OCR 的扫描页。已保留，文件编号 ${entry.id.slice(0, 8)}；需要云端 OCR 时发送 /ocr ${entry.id.slice(0, 8)}，之后仍会要求确认上传 Firecrawl。`,
             error,
@@ -152,6 +155,15 @@ export class Features {
         if (typeof input.prompt !== "string") throw new Error("prompt 必须为字符串");
         for (const field of ["cron", "at", "timeZone"] as const) {
           if (input[field] !== undefined && typeof input[field] !== "string") throw new Error(`${field} 必须为字符串`);
+        }
+        // 空字符串能通过 typeof 校验，但会让 Intl 抛 RangeError；视为未设置并回落到默认时区
+        if (input.timeZone === "") input.timeZone = undefined;
+        if (typeof input.timeZone === "string") {
+          try {
+            new Intl.DateTimeFormat("en", { timeZone: input.timeZone });
+          } catch {
+            throw new Error("timeZone 不是有效的时区，例如 Asia/Shanghai");
+          }
         }
         const job = this.scheduler.add({ account: this.account, key: ctx.key, user: ctx.user, prompt: input.prompt,
           cron: input.cron as string | undefined, at: input.at as string | undefined,

@@ -23,6 +23,8 @@ import { STATE_DIR } from "../config.js";
 
 /** 内存中保留的会话上限；超出后淘汰最久未使用的空闲会话 */
 const MAX_IDLE_SESSIONS = 32;
+/** 兜底 profile：permission 缺失会让下游判断全部落空（等价 full 免确认），必须显式给出最保守值 */
+const READ_ONLY_FALLBACK: ResolvedProfile = { workspace: WORKSPACE, permission: "read-only" };
 /** 会话空闲多久后可被淘汰（仍在处理中的会话永不淘汰） */
 const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
 
@@ -140,7 +142,7 @@ export class PiSessionManager {
     const models = await configuredModels(this.modelRuntime);
     if (!models.some((model) => model.ref === ref)) throw new Error("模型不在 models.json 中，请用 /model list 查看");
     if (this.busy.has(key)) throw new Error("任务执行期间不能切换模型，请先 /stop");
-    const profile = this.profiles.get(key) ?? { workspace: WORKSPACE, permission: "read-only" as const };
+    const profile = this.profiles.get(key) ?? READ_ONLY_FALLBACK;
     new Policy().setModel(key, ref);
     this.configure(key, { ...profile, model: ref });
     return `当前会话已切换为 ${ref}，其他对话不变；重启后保持。`;
@@ -308,7 +310,7 @@ export class PiSessionManager {
     {
       // 会话选择优先于项目和安装默认值，配置缺失时明确拒绝请求。
       // 兜底 profile 必须显式给出最保守的 permission：缺省会让下游判定落到"全权限免确认"。
-      const profile = this.profiles.get(key) ?? { workspace: WORKSPACE, permission: "read-only" as const };
+      const profile = this.profiles.get(key) ?? READ_ONLY_FALLBACK;
       const ref = profile.model || this.modelRef;
       const model = this.resolveModel(ref);
       if (!model) throw new Error(`模型 ${ref} 不可用，请用 /model list 查看并选择`);
@@ -369,12 +371,15 @@ export class PiSessionManager {
    */
   evictIdleSessions(now = Date.now()): number {
     if (this.sessions.size <= MAX_IDLE_SESSIONS) return 0;
-    const candidates = [...this.sessions.keys()]
+    const idle = [...this.sessions.keys()]
       .filter((key) => !this.busy.has(key) && !this.locks.has(key))
       .map((key) => ({ key, touched: this.sessionTouched.get(key) ?? 0 }))
-      .filter((entry) => now - entry.touched > SESSION_IDLE_TTL_MS)
       // 最久未使用的先淘汰
       .sort((a, b) => a.touched - b.touched);
+    // 超过上限时不再看空闲时长：否则「都还在 TTL 内」会让 candidates 为空、上限失效。
+    // 先取已过期的，仍不足则按 LRU 继续补足。
+    const expired = idle.filter((entry) => now - entry.touched > SESSION_IDLE_TTL_MS);
+    const candidates = expired.length >= this.sessions.size - MAX_IDLE_SESSIONS ? expired : idle;
     const excess = this.sessions.size - MAX_IDLE_SESSIONS;
     let evicted = 0;
     for (const entry of candidates) {
@@ -433,7 +438,6 @@ export class PiSessionManager {
     let unknown = false;
     if (options.signal?.aborted) throw new ChatStoppedError();
     let current = "";
-    let final = "";
     /** 最后一条已完成的 assistant 消息的文本（可能为空）；用于区分「本轮无回复」与「沿用上轮旁白」 */
     let lastCompleted: string | undefined;
     let terminal: "error" | "aborted" | undefined;
@@ -456,7 +460,6 @@ export class PiSessionManager {
         // 记录每一条完成消息的文本（含空串）：末条只调工具不产出文本时，
         // 不能退回去用更早那轮的旁白当最终回复，否则用户会看到与本次请求无关的内容。
         lastCompleted = current;
-        if (current.trim()) final = current;
       } else if (event.type === "tool_execution_start") {
         options.onProgress?.({ stage: "tool", toolName: event.toolName });
       } else if (event.type === "tool_execution_end") {
@@ -496,7 +499,7 @@ export class PiSessionManager {
     // 有流式增量尚未收尾时以 current 为准；否则用最后一条完成消息的文本。
     // 若末条消息没有文本（例如只调用了工具），返回空串让上层发出「已处理完成」提示，
     // 而不是回退到更早那轮的旁白。
-    const latest = current.trim() ? current : (lastCompleted ?? final);
+    const latest = current.trim() ? current : (lastCompleted ?? "");
     return latest.trim();
   }
 

@@ -35,8 +35,9 @@ export class ConversationStore {
       // 若直接抛错，/sessions 与 /resume 全部不可用，而用户唯一能用的 /new 会写新指针、
       // 让原有历史彻底不可达——比损坏本身后果更严重。
       const backup = `${pointer}.corrupt-${Date.now()}`;
-      try { renameSync(pointer, backup); } catch { /* 隔离失败也不阻断重建 */ }
-      logger.warn(`对话记录索引损坏（已隔离为 ${backup}），已重建指针：${String(error)}`);
+      let isolated = false;
+      try { renameSync(pointer, backup); isolated = true; } catch { /* 隔离失败也不阻断重建 */ }
+      logger.warn(`对话记录索引损坏（${isolated ? `已隔离为 ${backup}` : "隔离备份失败，已直接重建"}），已重建指针：${String(error)}`);
       return this.reset(key);
     }
     if (!current || typeof current !== "object" || !("file" in current)

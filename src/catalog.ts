@@ -48,18 +48,46 @@ export function listSkills(): SkillInfo[] {
   return out;
 }
 
+/**
+ * 清洗外部来源字符串（skill 名、路径、命令）：去除换行与控制字符并限长。
+ * 这些值来自磁盘上的元数据（用户/项目可写），直接拼进发给模型的指令会构成提示词注入面。
+ */
+function sanitizeForPrompt(value: string, maxLength = 200): string {
+  return value.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
 /** mcp.json 注册的 MCP server（name + 启动命令） */
 export function listMcpServers(): McpServerInfo[] {
   try {
     const file = join(getAgentDir(), "mcp.json");
     if (!existsSync(file)) return [];
-    const data = JSON.parse(readFileSync(file, "utf8")) as {
-      mcpServers?: Record<string, { command?: string; args?: string[] }>;
-    };
-    return Object.entries(data.mcpServers ?? {}).map(([name, c]) => ({
-      name,
-      command: c.command ? `${c.command} ${(c.args ?? []).join(" ")}`.trim() : "",
-    }));
+    const data: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!data || typeof data !== "object" || Array.isArray(data)) return [];
+    const servers = (data as Record<string, unknown>).mcpServers;
+    if (!servers || typeof servers !== "object" || Array.isArray(servers)) return [];
+    const out: McpServerInfo[] = [];
+    for (const [name, entry] of Object.entries(servers as Record<string, unknown>)) {
+      // 单个条目非法只跳过该条，不拖垮整个列表
+      if (!entry || typeof entry !== "object") {
+        logger.warn(`mcp.json 条目 ${name} 非对象（已跳过）`);
+        continue;
+      }
+      const command = (entry as Record<string, unknown>).command;
+      const args = (entry as Record<string, unknown>).args;
+      if (command !== undefined && typeof command !== "string") {
+        logger.warn(`mcp.json 条目 ${name} 的 command 非字符串（已跳过）`);
+        continue;
+      }
+      if (args !== undefined && (!Array.isArray(args) || !args.every((a) => typeof a === "string"))) {
+        logger.warn(`mcp.json 条目 ${name} 的 args 非字符串数组（已跳过）`);
+        continue;
+      }
+      out.push({
+        name,
+        command: command ? sanitizeForPrompt(`${command} ${(args ?? []).join(" ")}`.trim(), 160) : "",
+      });
+    }
+    return out;
   } catch (err) {
     logger.warn(`mcp.json 读取失败（视为未配置）：${String(err)}`);
     return [];
@@ -68,10 +96,14 @@ export function listMcpServers(): McpServerInfo[] {
 
 /** skill 调用指令：拼到用户下一条消息前，让 pi 按该 skill 处理 */
 export function skillDirective(info: SkillInfo): string {
-  return `【skill 指令】请严格按 skill「${info.name}」处理用户请求：先读取 ${info.filePath}（及其引用文件），按其说明执行。`;
+  // name/filePath 来自磁盘元数据，清洗防提示词注入（换行截断、超长截断）
+  const name = sanitizeForPrompt(info.name, 80);
+  const filePath = sanitizeForPrompt(info.filePath);
+  return `【skill 指令】请严格按 skill「${name}」处理用户请求：先读取 ${filePath}（及其引用文件），按其说明执行。`;
 }
 
 /** MCP 调用指令：让 pi 调用指定 server 的工具处理下一条消息 */
 export function mcpDirective(info: McpServerInfo): string {
-  return `【MCP 指令】请调用 MCP server「${info.name}」的相应工具处理用户请求（工具名通常带该 server 前缀）；若工具不可用则说明原因。`;
+  const name = sanitizeForPrompt(info.name, 80);
+  return `【MCP 指令】请调用 MCP server「${name}」的相应工具处理用户请求（工具名通常带该 server 前缀）；若工具不可用则说明原因。`;
 }

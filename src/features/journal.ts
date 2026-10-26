@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ScopedState } from "./state.js";
+import { logger } from "../logger/index.js";
 
 export interface TaskRecord {
   id: string;
@@ -22,37 +23,51 @@ export class TaskJournal {
   private readonly initialized = new Set<string>();
   constructor(root?: string) { this.state = new ScopedState("tasks", () => [], root); }
   /** 读取记录（返回副本，避免调用方改动内存态却不落盘） */
+  /** 首次接触该 key 时把残留的 running 标记为中断（进程重启后不可能还在执行） */
+  private repairOnce(key: string, entries: TaskRecord[]): boolean {
+    if (this.initialized.has(key)) return false;
+    this.initialized.add(key);
+    let changed = false;
+    for (const entry of entries) {
+      if (entry.state === "running") { entry.state = "interrupted"; changed = true; }
+    }
+    return changed;
+  }
   list(key: string): TaskRecord[] {
     const entries = this.state.get(key);
-    if (!this.initialized.has(key)) {
-      // 进程重启后残留的 running 记录已不可能继续，标记为中断；每个 key 只做一次
-      let changed = false;
-      for (const entry of entries) {
-        if (entry.state === "running") { entry.state = "interrupted"; changed = true; }
-      }
-      if (changed) this.state.set(key, entries);
-      this.initialized.add(key);
-    }
+    if (this.repairOnce(key, entries)) this.state.set(key, entries);
     return entries.map((entry) => ({ ...entry, files: [...entry.files] }));
   }
   begin(key: string, text: string, project: string, messageId?: number): TaskRecord | undefined {
     const entries = this.state.get(key);
+    // 先修复再判重：残留的 running 标记须在中断判定之后参与去重比较
+    if (this.repairOnce(key, entries)) this.state.set(key, entries);
     if (messageId !== undefined && entries.some((entry) => entry.messageId === messageId)) return undefined;
-    if (!this.initialized.has(key)) {
-      // 首次接触该 key：残留的 running 记录不可能还在执行，标记为中断
-      for (const entry of entries) if (entry.state === "running") entry.state = "interrupted";
-      this.initialized.add(key);
-    }
     const entry: TaskRecord = { id: randomUUID(), text, project, messageId, files: [], createdAt: Date.now(), state: "running" };
     const next = [...entries, entry];
-    // 超出上限时丢弃最旧记录，控制单文件体积与每次全量重写的成本
-    this.state.set(key, next.length > MAX_RECORDS ? next.slice(-MAX_RECORDS) : next);
+    // 超上限时丢最旧的已结束记录；running 优先保留（被挤掉会让该任务收尾的 update() 抛错）。
+    // 若保留 running 后仍超上限（异常积压），再从头部整体截断，总量恒定有界。
+    const overflow = next.length - MAX_RECORDS;
+    let kept: TaskRecord[];
+    if (overflow <= 0) kept = next;
+    else {
+      const finishedDropped = next.filter((item, index) => item.state === "running" || index >= overflow);
+      kept = finishedDropped.length > MAX_RECORDS + 64
+        ? finishedDropped.slice(finishedDropped.length - MAX_RECORDS - 64)
+        : finishedDropped;
+    }
+    this.state.set(key, kept);
     return { ...entry, files: [] };
   }
   update(key: string, id: string, patch: Partial<Pick<TaskRecord, "files" | "state" | "result" | "error">>): void {
     const entries = this.state.get(key);
+    this.repairOnce(key, entries);
     const entry = entries.find((item) => item.id === id);
-    if (!entry) throw new Error("任务记录不存在");
+    if (!entry) {
+      // 记录已被上限裁剪（极端积压时）：丢弃本次回写，不抛错覆盖任务的原始结果
+      logger.warn(`任务记录 ${id} 已因上限裁剪移除，本次状态回写被跳过`);
+      return;
+    }
     Object.assign(entry, patch);
     if (patch.state && patch.state !== "running") entry.finishedAt = Date.now();
     this.state.set(key, entries);
