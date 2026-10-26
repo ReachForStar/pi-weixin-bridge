@@ -11,7 +11,9 @@ jobs:
   check-token:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions: {}
+    # 创建提醒 issue 需要 issues 写权限（此前为空权限导致 403）
+    permissions:
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +28,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           # 令牌到期日（90 天）。重新生成令牌后请同步更新此日期。
-          TOKEN_EXPIRES: "2026-10-24"
+          TOKEN_EXPIRES: "2027-01-24"
           WARN_DAYS: "14"
         run: |
           TODAY=$(date +%s)
