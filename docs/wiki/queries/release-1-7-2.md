@@ -19,9 +19,10 @@ status: active
 ## 解法
 
 1. `npm version 1.7.2 --no-git-tag-version` 修改版本号，同步 `package-lock.json` 根包版本。
-2. CHANGELOG 将 Unreleased 段落确定为 `## [1.7.2] - 2026-10-26`，保留空的 Unreleased 段。
+2. CHANGELOG 将 Unreleased 段落确定为 `## [1.7.2] - 2026-10-26`，保留空的 Unreleased 段；版本段首行写明对应 [PR #3](https://github.com/ReachForStar/pi-weixin-bridge/pull/3)，Release 正文由脚本从 CHANGELOG 提取，因此 PR 引用随正文一并进入 Release。
 3. 提交 `ec2784f` 推送 main：`package.json` 版本变化触发发布，publish 任务成功。
 4. 官方 registry 核验：`latest` 与 `version` 均为 1.7.2，tarball 为 `https://registry.npmjs.org/pi-weixin-bridge/-/pi-weixin-bridge-1.7.2.tgz`；[Release v1.7.2](https://github.com/ReachForStar/pi-weixin-bridge/releases/tag/v1.7.2) 非草稿、非预发布，指向 `ec2784f`，正文与 CHANGELOG 的 1.7.2 段落一致。
+5. 补 PR 引用时 Release 已发布：CI 不会为无版本变化的推送重写已存在的 Release，因此用 GitHub API `PATCH /repos/.../releases/<id>` 更新正文，再用 `extract-changelog.mjs` 输出对比读回正文确认一致。
 
 ## 验证
 
@@ -37,4 +38,5 @@ status: active
 
 - 版本号变化是发布的唯一触发条件，发布前确认 registry latest 与 main 版本一致，避免漏发或重发。
 - `Release` 正文由 `scripts/extract-changelog.mjs` 从 CHANGELOG 提取，因此版本段必须先于推送写入，标题必须写成 `## [x.y.z] - 日期`。
+- Release 正文里的 PR 引用写进 CHANGELOG 版本段首行，避免两处内容不一致；发布后才补引用需直接改 Release 正文（原工作流只在版本变化时创建 Release，已存在的 Release 不会被后续推送更新）。gh 2.4.0 无 `release edit`，改用 `gh api -X PATCH`。
 - 未在本机执行全局更新或改动用户自启；用户升级时仍需先停止后台再安装，见 [Windows 全局更新 EBUSY](npm-global-install-ebusy.md)。

@@ -6,6 +6,8 @@
 
 ## [1.7.2] - 2026-10-26
 
+对应 PR：[#3 升级 pi-coding-agent 0.82.0 → 1.4.0 并修复 Homebrew 布局 npm 入口查找](https://github.com/ReachForStar/pi-weixin-bridge/pull/3)
+
 ### Changed
 
 - 升级 pi-coding-agent 0.82.0 → 1.4.0：桥接引用的 API 在 1.4.0 兼容，无需改动调用代码；`engines.node` 随之上调为 `>=22.19.0`。

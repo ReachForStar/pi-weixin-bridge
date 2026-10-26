@@ -238,3 +238,7 @@ PR #3（fork）把 pi-coding-agent 0.82.0 升到 1.4.0，冲突只在 `package-l
 ## [2026-10-26] release | 发布 1.7.2
 
 版本号 1.7.1 → 1.7.2，内容为 pi 核心 1.4.0 升级、Homebrew 分离 formula 的 npm 入口查找、`fast-xml-parser` 显式依赖与锁文件源主机归一化。提交 `ec2784f` 推送 main 触发发布，CI 40277881017 三平台 check 与 publish 全部成功；官方 registry 的 `version` 与 `latest` 均为 1.7.2，Release v1.7.2 非草稿、非预发布，指向 `ec2784f`。本地 npm ci、typecheck、build 通过，155 测试通过、7 跳过；`npm pack --dry-run` 55 个条目不含 test、tmp、docs。见 [1.7.2 发布记录](queries/release-1-7-2.md)。
+
+## [2026-10-26] release | 1.7.2 Release 正文补 PR 引用
+
+用户要求 Release 正文引用对应 PR。把引用写进 CHANGELOG 的 1.7.2 版本段首行（`Release` 正文由 `extract-changelog.mjs` 提取，两处同源），随后用 `gh api -X PATCH /releases/423908267` 更新已发布的 v1.7.2 正文（gh 2.4.0 无 `release edit`），读回正文与脚本输出比对一致。见 [1.7.2 发布记录](queries/release-1-7-2.md)。
