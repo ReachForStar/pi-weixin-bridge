@@ -3,7 +3,7 @@ import { AuthError, ProtocolError } from "./ilink/errors.js";
 import { MessageType, TypingStatus, type WeixinMessage } from "./ilink/types.js";
 import { downloadInboundMedia, MediaDownloadError, uploadImage, uploadFile } from "./ilink/media.js";
 import { ContextStore } from "./ilink/context-store.js";
-import { parseIncomingMessage } from "./message/parser.js";
+import { isProcessable, parseIncomingMessage } from "./message/parser.js";
 import { buildImageMessage, buildTextMessage, buildFileMessage } from "./message/builder.js";
 import { chunkText } from "./message/markdown.js";
 import { TaskNotifier } from "./message/task-notifier.js";
@@ -24,6 +24,20 @@ class CommandExecutionError extends Error {
   constructor(error: unknown) {
     super("微信命令执行失败", { cause: error });
     this.notice = `⚠️ 命令执行失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+/**
+ * 可安全展示给用户的操作提示（如「附件超过大小上限」「此命令仅管理员可用」）。
+ * 未分类的异常会统一折叠为「请检查模型配置和服务日志」，会把用户引向错误的排查方向，
+ * 因此凡是能明确归因于用户操作的错误都应由本类承载。
+ */
+class UserFacingError extends Error {
+  readonly notice: string;
+  constructor(message: string) {
+    super(message);
+    this.name = "UserFacingError";
+    this.notice = `⚠️ ${message}`;
   }
 }
 
@@ -151,7 +165,9 @@ export class Bridge {
     const command = incoming.text.trim().split(/\s+/)[0].toLowerCase();
     // 停止与状态查询必须绕过任务队列，否则无法中断正在等待的附件请求。
     const immediate = ["/stop", "/cancel", "/tasks", "/approve", "/reject", "/ping", "/help", "/status", "/usage", "/daily", "/doctor", "/history", "/result"].includes(command);
-    if (!immediate && (incoming.text.trim() || msg.item_list?.length)) {
+    // 用解析结果判定是否真的可处理：空白文本或未识别的 item 类型若启动通知，
+    // 会先发出「开始处理任务」而在后续静默返回，用户永远等不到第二条消息。
+    if (!immediate && isProcessable(incoming)) {
       notifier.start();
       notifier.update({ stage: "queued" });
     }
@@ -185,7 +201,7 @@ export class Bridge {
     shutdownSignal: AbortSignal,
     recordId?: string,
   ): Promise<"completed" | "stopped" | "interrupted"> {
-    const onAbort = () => { void notifier.finish(); };
+    const onAbort = () => { void notifier.finish("⏹ 服务正在停止，本次任务已中断。"); };
     shutdownSignal.addEventListener("abort", onAbort, { once: true });
     try {
       signal.throwIfAborted();
@@ -198,7 +214,8 @@ export class Bridge {
         await notifier.finish("⏹ 本次任务已停止。");
         return "stopped";
       }
-      await notifier.finish(error instanceof DocumentConversionError || error instanceof MediaDownloadError || error instanceof CommandExecutionError
+      await notifier.finish(error instanceof DocumentConversionError || error instanceof MediaDownloadError
+        || error instanceof CommandExecutionError || error instanceof UserFacingError
         ? error.notice : "⚠️ 本次任务处理失败，请检查模型配置和服务日志后重试。");
       throw error;
     } finally {
@@ -230,7 +247,7 @@ export class Bridge {
       } };
     const name = text.trim().split(/\s+/)[0].toLowerCase();
     if (!["/approve", "/reject", "/stop", "/cancel", "/tasks", "/ping", "/help", "/status", "/usage", "/history", "/result", "/daily", "/doctor", "/project"].includes(name)) this.pi.configure(key, this.features.policy.profile(key, from));
-    if (!this.features.policy.identity(from).admin && ["/reload", "/mcp", "/skill"].includes(name)) throw new Error("此命令仅管理员可用");
+    if (!this.features.policy.identity(from).admin && ["/reload", "/mcp", "/skill"].includes(name)) throw new UserFacingError("此命令仅管理员可用");
     let featureReply;
     try { featureReply = await this.features.command(text, ctx); }
     catch (error) {
@@ -265,7 +282,7 @@ export class Bridge {
     const media = await downloadInboundMedia(msg.item_list, signal, profile.workspace, this.features.policy.maxFileBytes());
     const files = [];
     for (const file of media.files) {
-      if ((await stat(file.path)).size > this.features.policy.maxFileBytes()) throw new Error("附件超过配置大小上限");
+      if ((await stat(file.path)).size > this.features.policy.maxFileBytes()) throw new UserFacingError("附件超过配置大小上限");
       files.push(await this.features.library.add(key, file, profile.workspace));
     }
     if (recordId) this.features.journal.update(key, recordId, { files: files.map((file) => file.id) });
@@ -276,7 +293,12 @@ export class Bridge {
       promptText = [promptText, ...media.notes, ...documentNotes].filter(Boolean).join("\n");
     }
     if (!promptText.trim() && media.images.length) promptText = "请查看这张图片。";
-    if (!promptText.trim()) return;
+    // 到此仍无内容：明确告诉用户「这条消息无法处理」，而不是静默结束，
+    // 否则配合已发出的「开始处理任务」会让任务永远看起来卡住。
+    if (!promptText.trim()) {
+      await sendText("⚠️ 这条消息没有可处理的内容（可能是空消息或暂不支持的消息类型）。请直接发送文字，或重新发送附件。");
+      return;
+    }
     signal.throwIfAborted();
 
     logger.info(

@@ -9,9 +9,19 @@ export type Permission = "read-only" | "guarded" | "full";
 export interface ProjectProfile {
   workspace: string;
   model?: string;
+  /** 配置态可省略（未填则继承 access.permission） */
   permission?: Permission;
   tools?: string[];
   skills?: string[];
+}
+
+/**
+ * 运行时解析后的项目配置：permission 必须已确定。
+ * configure() 与内部缓存只接受此类型，避免漏传 permission 时
+ * 下游的 === "read-only" / === "guarded" 判断全部落空、退化成 full 免确认。
+ */
+export interface ResolvedProfile extends ProjectProfile {
+  permission: Permission;
 }
 interface Selection { project?: string; model?: string }
 
@@ -25,7 +35,7 @@ export class Policy {
     return { allowed: admin || access.allowFrom.includes(user), admin,
       permission: admin ? (access.permission ?? "guarded") : "read-only" };
   }
-  profile(key: string, user: string): ProjectProfile & { name: string; model: string; permission: Permission } {
+  profile(key: string, user: string): ResolvedProfile & { name: string; model: string } {
     const settings = loadSettings();
     const selected = this.choices.get(key);
     const name = selected.project ?? "default";

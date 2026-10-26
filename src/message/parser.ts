@@ -18,12 +18,18 @@ export interface IncomingMessage {
   raw: WeixinMessage;
 }
 
-function detectMedia(items?: MessageItem[]) {
+/** 把不可信的 item_list 规范化为数组：非数组/含非对象元素时安全降级，避免下游抛 TypeError */
+function normalizeItems(items: unknown): MessageItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.filter((item): item is MessageItem => Boolean(item) && typeof item === "object");
+}
+
+function detectMedia(items: MessageItem[]) {
   let hasImage = false;
   let hasVoice = false;
   let hasFile = false;
   let hasVideo = false;
-  for (const item of items ?? []) {
+  for (const item of items) {
     if (item.type === MessageItemType.IMAGE) hasImage = true;
     else if (item.type === MessageItemType.VOICE) hasVoice = true;
     else if (item.type === MessageItemType.FILE) hasFile = true;
@@ -32,15 +38,20 @@ function detectMedia(items?: MessageItem[]) {
   return { hasImage, hasVoice, hasFile, hasVideo };
 }
 
-/** 解析入站 WeixinMessage */
+/**
+ * 解析入站 WeixinMessage。
+ * 字段全部来自外部协议，可能缺失或类型不符：这里统一做类型归一，
+ * 使畸形消息退化为「空消息」而不是抛异常（抛异常会被上层只记日志，消息永久丢失且用户无反馈）。
+ */
 export function parseIncomingMessage(msg: WeixinMessage): IncomingMessage {
+  const items = normalizeItems(msg.item_list);
   return {
-    fromUserId: msg.from_user_id ?? "",
-    sessionId: msg.session_id,
-    groupId: msg.group_id,
-    contextToken: msg.context_token,
-    text: extractText(msg.item_list),
-    ...detectMedia(msg.item_list),
+    fromUserId: typeof msg.from_user_id === "string" ? msg.from_user_id : "",
+    sessionId: typeof msg.session_id === "string" ? msg.session_id : undefined,
+    groupId: typeof msg.group_id === "string" ? msg.group_id : undefined,
+    contextToken: typeof msg.context_token === "string" ? msg.context_token : undefined,
+    text: extractText(items),
+    ...detectMedia(items),
     raw: msg,
   };
 }

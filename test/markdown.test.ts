@@ -40,6 +40,15 @@ describe("chunkText 分块", () => {
     expect(chunks.join("")).toBe(text);
     expect(chunks.every((chunk) => chunk.length <= 3 && chunk.isWellFormed())).toBe(true);
   });
+  it("按字素簇切分，不拆散 ZWJ/肤色/国旗等组合字符", () => {
+    for (const unit of ["👨‍👩‍👧", "👋🏽", "🇨🇳"]) {
+      const text = unit.repeat(200);
+      const chunks = chunkText(text, 7);
+      expect(chunks.join("")).toBe(text);
+      // 每块都必须由完整的字素簇组成，不能出现孤立修饰符或半个国旗
+      expect(chunks.every((chunk) => chunk.isWellFormed())).toBe(true);
+    }
+  });
   it("短文本不分块", () => {
     expect(chunkText("short", 100)).toEqual(["short"]);
   });

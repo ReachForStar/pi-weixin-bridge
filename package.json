@@ -27,7 +27,8 @@
     "start": "tsx src/index.ts",
     "build": "tsc",
     "serve": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "pretest": "node scripts/clean-tmp.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

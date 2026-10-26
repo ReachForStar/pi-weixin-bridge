@@ -56,6 +56,10 @@ export class TaskNotifier {
     }
   }
 
+  /**
+   * 结束通知。已 start 但未显式给出结束文案时补发一条兜底消息，
+   * 避免「只有开始、没有结束」让用户以为任务卡死（例如停机中断、静默返回等路径）。
+   */
   async finish(message?: string): Promise<void> {
     if (this.closed) {
       await this.pending;
@@ -63,6 +67,7 @@ export class TaskNotifier {
     }
     this.closed = true;
     if (message) this.enqueue(message);
+    else if (this.timer) this.enqueue("✅ 本轮处理已结束。");
     await this.stopProgress();
   }
 

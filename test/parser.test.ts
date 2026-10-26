@@ -49,4 +49,20 @@ describe("isProcessable", () => {
   it("空消息不可处理", () => {
     expect(isProcessable(parseIncomingMessage({}))).toBe(false);
   });
+  it("畸形字段安全降级，不抛异常", () => {
+    // 协议字段来自外部，可能缺失或类型不符；抛异常会被上层只记日志，导致消息永久丢失
+    const malformed: unknown[] = [
+      { item_list: "not-an-array" },
+      { item_list: { a: 1 } },
+      { from_user_id: 12345, session_id: 999, item_list: [] },
+    ];
+    for (const raw of malformed) {
+      const parsed = parseIncomingMessage(raw as never);
+      expect(typeof parsed.text).toBe("string");
+      expect(typeof parsed.fromUserId).toBe("string");
+    }
+    // 数组中的合法项仍应被正确提取（其余非法元素被跳过）
+    const mixed = parseIncomingMessage({ item_list: [null, { type: MessageItemType.TEXT, text_item: { text: "ok" } }] } as never);
+    expect(mixed.text).toBe("ok");
+  });
 });

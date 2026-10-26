@@ -70,18 +70,25 @@ export function chunkText(text: string, maxLen = 4000): string[] {
     }
   }
   if (current) chunks.push(current);
-  // 单段仍超长时硬切
+  // 单段仍超长时硬切。
+  // 不能用 charCodeAt 判断代理对：ZWJ 组合（👨‍👩‍👧）、肤色修饰（👋🏽）、
+  // 区域指示符国旗（🇨🇳）都是多个码点组成的单个字素簇，切在中间同样会乱码。
+  // Intl.Segmenter 按字素簇切分，从根本上避免拆散用户可见字符。
   const result: string[] = [];
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
   for (const chunk of chunks) {
-    for (let i = 0; i < chunk.length;) {
-      let end = Math.min(i + maxLen, chunk.length);
-      // UTF-16 代理对必须一起发送，否则表情等字符会损坏。
-      const last = chunk.charCodeAt(end - 1);
-      const next = chunk.charCodeAt(end);
-      if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end--;
-      result.push(chunk.slice(i, end));
-      i = end;
+    let current = "";
+    let currentLen = 0;
+    for (const { segment } of segmenter.segment(chunk)) {
+      if (currentLen + segment.length > maxLen && current) {
+        result.push(current);
+        current = "";
+        currentLen = 0;
+      }
+      current += segment;
+      currentLen += segment.length;
     }
+    if (current) result.push(current);
   }
   return result;
 }

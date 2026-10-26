@@ -13,7 +13,7 @@ import type { TaskProgress } from "../message/task-notifier.js";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { logger } from "../logger/index.js";
-import { Policy, checkedPath, type ProjectProfile } from "../features/policy.js";
+import { Policy, checkedPath, type ResolvedProfile } from "../features/policy.js";
 import { configuredModels } from "../models.js";
 import { FileLibrary } from "../features/library.js";
 import { UsageLedger } from "../features/usage.js";
@@ -56,7 +56,7 @@ export class ChatStoppedError extends Error {
  */
 export class PiSessionManager {
   private readonly conversations = new ConversationStore();
-  private readonly profiles = new Map<string, ProjectProfile>();
+  private readonly profiles = new Map<string, ResolvedProfile>();
   private readonly library = new FileLibrary();
   readonly usage = new UsageLedger();
   private sessions = new Map<string, AgentSession>();
@@ -84,7 +84,7 @@ export class PiSessionManager {
     if (!choices.some((model) => model.ref === this.modelRef)) throw new Error("默认模型不在 models.json 中，请运行 pi-weixin-bridge config model 选择");
   }
 
-  configure(key: string, profile: ProjectProfile): void {
+  configure(key: string, profile: ResolvedProfile): void {
     if (JSON.stringify(this.profiles.get(key)) === JSON.stringify(profile)) return;
     if (this.busy.has(key)) throw new Error("任务执行期间不能修改会话配置");
     if (JSON.stringify(this.profiles.get(key)) !== JSON.stringify(profile)) {
@@ -140,7 +140,7 @@ export class PiSessionManager {
     const models = await configuredModels(this.modelRuntime);
     if (!models.some((model) => model.ref === ref)) throw new Error("模型不在 models.json 中，请用 /model list 查看");
     if (this.busy.has(key)) throw new Error("任务执行期间不能切换模型，请先 /stop");
-    const profile = this.profiles.get(key) ?? { workspace: WORKSPACE };
+    const profile = this.profiles.get(key) ?? { workspace: WORKSPACE, permission: "read-only" as const };
     new Policy().setModel(key, ref);
     this.configure(key, { ...profile, model: ref });
     return `当前会话已切换为 ${ref}，其他对话不变；重启后保持。`;
@@ -307,7 +307,8 @@ export class PiSessionManager {
     this.evictIdleSessions();
     {
       // 会话选择优先于项目和安装默认值，配置缺失时明确拒绝请求。
-      const profile = this.profiles.get(key) ?? { workspace: WORKSPACE };
+      // 兜底 profile 必须显式给出最保守的 permission：缺省会让下游判定落到"全权限免确认"。
+      const profile = this.profiles.get(key) ?? { workspace: WORKSPACE, permission: "read-only" as const };
       const ref = profile.model || this.modelRef;
       const model = this.resolveModel(ref);
       if (!model) throw new Error(`模型 ${ref} 不可用，请用 /model list 查看并选择`);
@@ -388,11 +389,12 @@ export class PiSessionManager {
 
   /** 对外入口：按 key 串行执行对话 */
   async chat(key: string, text: string, options: ChatOptions = {}): Promise<string> {
-    // 消费一次性指令（/skill、/mcp）：拼到本条消息前，仅生效一次
-    const directive = this.consumeDirective(key);
-    const promptText = directive ? `${directive}\n\n${text}` : text;
     if (this.locks.has(key)) options.onProgress?.({ stage: "queued" });
     return this.enqueue(key, async () => {
+      // 一次性指令（/skill、/mcp）必须在任务真正开始执行时消费：
+      // 若在入队前消费，排队期间被 /stop 取消会让指令白白丢失（下一条消息收不到该指令）。
+      const directive = this.consumeDirective(key);
+      const promptText = directive ? `${directive}\n\n${text}` : text;
       if (options.replyContext) this.replyContexts.set(key, options.replyContext);
       else this.replyContexts.delete(key);
       try {
@@ -432,6 +434,8 @@ export class PiSessionManager {
     if (options.signal?.aborted) throw new ChatStoppedError();
     let current = "";
     let final = "";
+    /** 最后一条已完成的 assistant 消息的文本（可能为空）；用于区分「本轮无回复」与「沿用上轮旁白」 */
+    let lastCompleted: string | undefined;
     let terminal: "error" | "aborted" | undefined;
     let errorMessage: string | undefined;
     const unsubscribe = session.subscribe((event) => {
@@ -449,6 +453,9 @@ export class PiSessionManager {
         terminal = event.message.stopReason === "error" || event.message.stopReason === "aborted"
           ? event.message.stopReason : undefined;
         errorMessage = event.message.errorMessage;
+        // 记录每一条完成消息的文本（含空串）：末条只调工具不产出文本时，
+        // 不能退回去用更早那轮的旁白当最终回复，否则用户会看到与本次请求无关的内容。
+        lastCompleted = current;
         if (current.trim()) final = current;
       } else if (event.type === "tool_execution_start") {
         options.onProgress?.({ stage: "tool", toolName: event.toolName });
@@ -468,6 +475,14 @@ export class PiSessionManager {
       const promptImages = options.images?.length
         ? options.images.map((img) => ({ type: "image" as const, mimeType: img.mimeType, data: img.data }))
         : undefined;
+      // 关键窗口：signal 可能在上面检查之后、prompt 真正开跑之前 abort。
+      // 此时 SDK 的 abort() 对空闲 agent 是 no-op，监听器不会留下任何效果，
+      // 任务会照常跑完并可能已产生副作用（写文件/改代码），最后才抛出「已停止」。
+      // 因此在交给 SDK 前再确认一次，让 /stop 在这个窗口内也真正生效。
+      if (options.signal?.aborted) {
+        await session.abort().catch(() => { /* 空闲会话 abort 失败无影响 */ });
+        throw new ChatStoppedError();
+      }
       await session.prompt(text, promptImages ? { images: promptImages } : undefined);
       if (options.signal?.aborted) throw new ChatStoppedError();
       if (terminal === "aborted") throw new ChatStoppedError();
@@ -478,7 +493,11 @@ export class PiSessionManager {
       this.busy.delete(key);
       unsubscribe();
     }
-    return (final || current).trim();
+    // 有流式增量尚未收尾时以 current 为准；否则用最后一条完成消息的文本。
+    // 若末条消息没有文本（例如只调用了工具），返回空串让上层发出「已处理完成」提示，
+    // 而不是回退到更早那轮的旁白。
+    const latest = current.trim() ? current : (lastCompleted ?? final);
+    return latest.trim();
   }
 
   dispose(): void {

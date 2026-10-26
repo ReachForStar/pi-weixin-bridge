@@ -67,7 +67,6 @@ describe("runInstallWizard", () => {
     expect(existsSync(customWs)).toBe(true);
     const cfg = JSON.parse(
       readFileSync(join(home, ".pi-weixin-bridge", "config.json"), "utf8"),
-      "utf8",
     );
     expect(cfg).toEqual({ stateDir: customState, workspace: customWs });
   });
