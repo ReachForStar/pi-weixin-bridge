@@ -4,6 +4,43 @@
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-10-26
+
+### Added
+
+- 新增 `src/fs-atomic.ts` 共享原子写（循环写满 + fsync 文件与父目录 + 失败清理临时文件），`config` / `account` / `state` / `context-store` 四处重复实现收敛为一。
+- 新增 `src/daemon/pid-identity.ts`：PID 文件保持纯数字（满足 systemd `PIDFile=` 契约），启动时间写入旁路 `.start` 文件，杀进程前校验进程身份，PID 被系统复用时拒绝发信号。
+- 新增 `test/pid-lock.test.ts` 14 例，覆盖 PID 文件解析、复用识别、锁回收与原子写。
+- typecheck 切换为 `tsconfig.check.json`，测试代码纳入类型检查（此前 0 个测试文件参与）。
+
+### Changed
+
+- 文档转换工作进程改为原子写并输出 sidecar 元数据（输入指纹 + 输出大小/哈希），父进程复用前校验完整性，截断产物不再被永久复用；转换超时与文件损坏分开提示。
+- 附件下载改为流式读取并按 `Content-Length` 预检、边读边计数；图片纳入同一上限；超限走 `MediaTooLargeError` 向用户透传具体字节数。
+- `chunkText` 改用 `Intl.Segmenter` 按字素簇切分，ZWJ 组合、肤色修饰、区域指示符国旗不再被拆散。
+- 空闲会话淘汰（上限 32、空闲 30 分钟，处理中的会话永不淘汰），会话已持久化，淘汰后重开不丢上下文。
+- 权限类型收紧：新增 `ResolvedProfile`（permission 必填），`configure()` 与内部缓存改用，漏传在编译期报错。
+- `supervisor.log` 加入与 `bridge.log` 一致的 5MB 轮转；`.gitignore` 排除附件目录防误提交用户隐私。
+- 清理测试残留目录的 `clean-tmp.mjs` 挂入 `pretest` 与 `test:watch`，前缀对齐全量测试目录并加尾分隔符，`lstat` 拒绝符号链接。
+
+### Fixed
+
+- 状态文件损坏只降级不再瘫痪服务：`readJson` 隔离 `.corrupt-*` 备份并回退空值，覆盖任务记录、资料、定时任务三个模块；语法合法但结构不符同样降级。
+- `readJson` 瞬时 IO 错误（EACCES/EIO）改为抛出：原先返回空值会让调用方随后的 `set()` 用残缺快照覆盖原文件。
+- 进程锁容错：非法内容按无锁处理，`.reclaim` 残留可回收，重读加间隔并保守处理读取失败，防删活锁与双实例。
+- `daemonStatus()` 引入 PID 身份校验，PID 被复用时 stop / start 不再双双卡死。
+- `context.json` 存明文 `context_token` 却按 umask 落盘（0664），改为 0600 原子写；`account.json` 临时文件改随机名 + 0600。
+- 通知不再"只有开头没有结尾"：接入 `isProcessable` 判定、无内容消息显式回复、`finish()` 兜底结束文案；进度消息不再可能排到结束语之后。
+- `/stop` 在"出队后、prompt 开跑前"的窗口补第二次 abort 检查，SDK 对空闲 agent 的 abort 空转不再导致任务跑完才报"已停止"。
+- 末条 assistant 消息无文本（只调工具）时不再回退到上一轮旁白。
+- `journal` 有界化（500 条上限，running 优先保留）；`library` 去重限定当前项目目录并校验文件存在；检索预算倒序，新上传资料优先入索引。
+- `catalog`：skill 名与路径拼入模型指令前清洗换行/控制字符并限长，堵住磁盘元数据到提示词的注入面；`mcpServers` 逐条结构校验。
+- `account.loadState` 结构校验，畸形内容隔离备份并视为未登录；`usage.add` 对 NaN / Infinity / 负数按 0 记账。
+- `parser` 对畸形字段安全降级（`item_list` 非数组、字段类型不符不再抛 TypeError 丢消息）；归一化数组供媒体下载消费。
+- 明确错误不再被折叠成"请检查模型配置"：`UserFacingError` / `MediaTooLargeError` 透传"附件超过大小上限""此命令仅管理员可用"等真实原因。
+- `/schedule add` 逐字段校验 JSON 类型与时区有效性，不再以裸 TypeError 暴露给用户。
+- Windows 自启注册失败返回明确信息；任务不存在时卸载按未注册处理。
+
 ## [1.7.2] - 2026-10-26
 
 对应 PR：[#3 升级 pi-coding-agent 0.82.0 → 1.4.0 并修复 Homebrew 布局 npm 入口查找](https://github.com/ReachForStar/pi-weixin-bridge/pull/3)

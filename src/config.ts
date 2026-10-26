@@ -144,8 +144,8 @@ export const CONFIG = {
   ilinkAppId: "bot",
   ilinkAppClientVersion: buildClientVersion(CHANNEL_VERSION),
   channelVersion: CHANNEL_VERSION,
-  /** 自我声明的上游身份（类似 User-Agent，仅用于观测） */
-  botAgent: "pi-weixin-bridge/1.0.0",
+  /** 自我声明的上游身份（类似 User-Agent，仅用于观测）；版本跟随 package.json，避免手工同步漂移 */
+  botAgent: `pi-weixin-bridge/${BRIDGE_VERSION}`,
   /** ilink bot_type（当前渠道构建固定为 3） */
   botType: "3",
   /** getUpdates 长轮询超时 */
