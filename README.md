@@ -189,6 +189,9 @@ pi-weixin-bridge config unset budget.dailyTokens
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi models.json 与鉴权配置目录 |
 | `PI_WEIXIN_STATE_DIR` | `~/.pi-weixin-bridge` | 状态目录（账号凭据、会话上下文、daemon 日志） |
 | `PI_WEIXIN_WORKSPACE` | 新安装 `~/pi-weixin-project`；保留已有 Windows 旧目录 | pi 会话的工作目录（Agent 在此读写文件） |
+| `LOG_LEVEL` | `info` | 日志级别：debug / info / warn / error |
+
+> 程序不读取 `.env` 文件，以上变量需直接设置到系统环境（Windows 用 `setx`，POSIX 写入 shell 配置）。
 
 `config.json` 示例（由 `install` / `config` 生成，可手改）：
 
@@ -203,31 +206,55 @@ pi-weixin-bridge config unset budget.dailyTokens
 ```
 src/
 ├── index.ts          # 入口：登录、状态持久化、会话超时/鉴权失效重登、优雅退出
-├── cli.ts            # CLI 命令（install/login/start/stop/status/update/uninstall/help）
-├── account.ts        # 账号凭据读写
-├── config.ts         # 协议常量与路径配置
-├── bridge.ts         # 主循环：getUpdates → 媒体 → pi → sendMessage，typing 状态
+├── cli.ts            # CLI 命令（install/login/config/start/stop/status/update/uninstall/help）
+├── wizard.ts         # 安装向导：路径选择、可写探针、扫码、模型选择
+├── config-command.ts # `config` 子命令：show/get/set/unset/models/model
+├── account.ts        # 账号凭据读写（结构校验 + 隔离备份 + 0600 原子写）
+├── config.ts         # 协议常量与路径配置（原子写保存）
+├── fs-atomic.ts      # 共享原子写：循环写满 + fsync 文件与父目录 + 失败清理临时文件
+├── models.ts         # pi models.json 读取与模型目录
+├── catalog.ts        # skill / MCP 列表（外部元数据清洗 + 结构校验）
+├── command.ts        # 斜杠命令处理（/help /status /stop 等直接响应）
+├── platform.ts       # Windows 辅助脚本调用（winax COM 绑定）
+├── npm-command.ts    # npm 命令解析（含 Homebrew 布局候选路径）
+├── bridge.ts         # 主循环：getUpdates → 媒体 → pi → sendMessage，typing 状态、任务通知
 ├── daemon/           # 内置后台 daemon（零第三方依赖，替代 PM2）
 │   ├── daemon.ts     # 控制端：拉起/停止 supervisor 进程树、PID 与日志、退避策略
-│   ├── supervisor.ts # supervisor 进程：子进程崩溃自动重启（指数退避）
-│   └── boot.ts       # 开机自启：注册/移除每用户登录计划任务（免管理员）
+│   ├── supervisor.ts # supervisor 进程：子进程崩溃自动重启（指数退避）、日志轮转
+│   ├── boot.ts       # 开机自启：Windows 计划任务 / macOS LaunchAgent / Linux systemd 用户服务
+│   ├── process-lock.ts # 独占实例锁：非法内容容错、.reclaim 残留回收
+│   ├── pid-identity.ts # PID 身份校验：启动时间比对，防 PID 复用误杀进程组
+│   └── procs.ts      # 进程统计（跨平台 CPU / 内存 / 运行时长采样）
+├── features/         # 业务能力
+│   ├── service.ts    # 斜杠命令编排：/project /model /files /history /schedule 等
+│   ├── policy.ts     # 权限沙箱：access 白名单、项目 profile、checkedPath 路径限制
+│   ├── approvals.ts  # 工具执行确认（guarded 模式，编号 + 超时 + 参数复核）
+│   ├── scheduler.ts  # 定时任务（cron / 单次，失败暂停）
+│   ├── library.ts    # 资料库：SHA-256 去重、本地全文检索
+│   ├── journal.ts    # 任务历史（500 条上限，running 优先保留）
+│   ├── usage.ts      # Token / 成本预算账本（NaN 防护）
+│   └── state.ts      # ScopedState 持久化：损坏隔离 + 结构校验 + 原子写
 ├── logger/           # 分级日志（info/warn/error/debug + 时间戳）
 ├── ilink/
 │   ├── types.ts      # iLink 协议类型与枚举
 │   ├── client.ts     # HTTP 客户端（请求头、长轮询、收发、typed errors）
 │   ├── errors.ts     # 错误类型（Network/Auth/Protocol/SessionTimeout）
 │   ├── login.ts      # 扫码登录流程（含重定向、配对码、过期刷新）
-│   ├── context-store.ts # context_token / typing ticket 持久化
-│   ├── message.ts    # 消息正文提取（文本 / 语音转文字）
-│   └── media.ts      # 媒体：AES 加解密、CDN 上传下载、入站解析、出站媒体上传
-├── message/          # 消息构造 / 解析
-│   ├── parser.ts     # 入站消息解析
+│   ├── context-store.ts # context_token / typing ticket 持久化（0600 原子写）
+│   ├── message.ts    # 消息正文提取（文本 / 语音转文字，类型校验）
+│   └── media.ts      # 媒体：AES 加解密、CDN 流式下载限额、上传
+├── message/          # 消息构造 / 解析 / 通知
+│   ├── parser.ts     # 入站消息解析（畸形字段安全降级，归一化数组）
 │   ├── builder.ts    # 出站消息构造（文本/图片/文件/视频）
-│   └── markdown.ts   # markdown 格式化 / 转义 / 分块
+│   ├── documents.ts  # anydoc 文档转换编排 + 产物完整性校验（sidecar 指纹）
+│   ├── task-queue.ts # 按会话串行的任务队列（abort 传播、失败不阻塞）
+│   ├── task-notifier.ts # 任务进度通知（开始/每 30 秒/结束，顺序保证）
+│   └── markdown.ts   # markdown 格式化 / 转义 / 字素簇安全分块
 └── pi/
-    └── sessions.ts   # pi 会话管理（按微信会话隔离 + 串行化 + 发图工具 + skill/MCP 一次性指令）
+    ├── sessions.ts   # pi 会话管理（隔离 + 串行化 + 空闲淘汰 + ResolvedProfile 权限契约）
+    └── conversation-store.ts # 对话持久化（索引损坏自愈）
 examples/             # 示例（echo-bot 最小回声机器人）
-test/                 # 单元测试（vitest）
+test/                 # 单元测试（vitest，含 pid-lock 14 例）
 ```
 
 最小示例见 [examples/echo-bot.ts](examples/echo-bot.ts)。
@@ -257,6 +284,11 @@ test/                 # 单元测试（vitest）
 - ✅ 斜杠命令（基本命令：`/help` / `/status` / `/new` / `/model` / `/skill` / `/mcp` / `/reload` / `/usage` / `/stop` / `/ping`），未知命令交由 pi
 - ✅ 内置后台 daemon（崩溃自动重启 + 日志轮转 + 开机自启，零第三方依赖；Windows 计划任务 / macOS LaunchAgent / Linux systemd 用户服务）
 - ✅ 跨平台（Windows / Linux / macOS），安装向导交互式选择保存路径 + 凭据权限加固（POSIX 700/600）
+- ✅ 状态文件损坏只降级不瘫痪：JSON 语法或结构非法自动隔离 `.corrupt-*` 备份并按空数据运行，覆盖任务记录、资料、定时任务与会话索引
+- ✅ PID 身份校验：PID 文件记录进程启动时间，PID 被系统复用时拒绝发信号，`daemon stop` 不误杀无关进程（含进程组）
+- ✅ 附件流式限额：按 `Content-Length` 预检、边读边计数，图片纳入同一上限，超限向用户透传具体字节数
+- ✅ 会话空闲淘汰（上限 32、空闲 30 分钟，处理中永不淘汰），会话已持久化，淘汰后重开不丢上下文
+- ✅ 消息长文本按字素簇分块，ZWJ 组合、肤色修饰、国旗 emoji 不再被拆散
 - ⬜ 出站语音（需 silk 编码，未做）
 
 ### 对话恢复与任务通知
@@ -269,7 +301,7 @@ test/                 # 单元测试（vitest）
 
 发送 PDF、Word、Excel、PowerPoint 等受支持文档时，桥接服务先保存原件，再使用内置的 anydoc 0.2.4 本地转换为 Markdown，将原件和 Markdown 路径交给 pi。支持格式以 anydoc 的内容识别和扩展名识别结果为准；Markdown、普通文本与其他文件保留现有路径处理方式。转换结果保存在原件旁边（`原文件路径.md`），不会覆盖原件；长时间转换会在任务进度中显示。转换每个文件最多运行 120 秒，子进程控制输出上限为 16 MiB。
 
-扫描型 PDF 会明确提示需要 OCR，原件保留，默认不上传外部服务；若要使用 Firecrawl 云端 OCR，须另行确认上传。损坏或加密文档转换失败时通知用户，不把失败文件当作已转换文档交给 pi。
+扫描型 PDF 会明确提示需要 OCR，原件保留，默认不上传外部服务；若要使用 Firecrawl 云端 OCR，须另行确认上传。损坏或加密文档转换失败时通知用户，不把失败文件当作已转换文档交给 pi。转换产物带完整性校验（sidecar 记录输入指纹与输出哈希）：超时或中止留下的截断 Markdown 不会被当作转换成功复用，会自动清理并重新转换。
 
 ### 模型
 
@@ -307,8 +339,8 @@ test/                 # 单元测试（vitest）
 
 - `/sessions` 查看当前项目历史；`/resume <编号>` 切换；`/rename <名称>` 命名；`/export` 导出并发送 HTML。
 - `/files` 查看保存的资料；`/files find <关键词>` 本地检索；`/file <编号>` 取回原件；`/file <编号> markdown` 取回转换结果。
-- 资料按当前微信对话保存，内容 SHA-256 去重；原件位于接收时的项目 `.weixin-files/`，索引位于状态目录 `documents/`。切换项目后，文件取回仍要求当前项目包含该文件，必要时先切回原项目。
-- 本地全文检索最多加载最近 200 份资料，每份文本不超过 2 MiB，返回最多 8 个片段与来源。模型也可用 `search_weixin_files` 检索。
+- 资料按当前微信对话保存，内容 SHA-256 去重（去重要求原文件仍在，被清理后重传同一文件会重新保存）；原件位于接收时的项目 `.weixin-files/`，索引位于状态目录 `documents/`。切换项目后，文件取回仍要求当前项目包含该文件，必要时先切回原项目。
+- 本地全文检索最多加载最近 200 份资料，按新旧顺序占用预算（新资料优先），每份文本不超过 2 MiB、总计 32 MiB，返回最多 8 个片段与来源；单个文件丢失只跳过该文件。模型也可用 `search_weixin_files` 检索。
 - 扫描 PDF 使用 `/ocr <文件编号>`，机器人展示上传 Firecrawl 的文件与费用提示后，用户再发 `/approve <确认编号>` 才会执行。仅此次文件获授权；`/reject <编号>` 拒绝，120 秒未确认则取消。
 - anydoc 支持的办公文档内嵌图片会另存为资产；PDF 内嵌图片不通过不受支持的 `toDocument` 提取。转换每文件超时 120 秒；子进程控制输出上限 16 MiB，Markdown 文件本身由磁盘容量限制。
 
@@ -369,12 +401,14 @@ pi 是具备工具执行能力的编码 Agent（默认含 bash 等工具）。�
 ## 开发
 
 ```bash
-npm run typecheck   # 类型检查
-npm test            # 单元测试（vitest）
+npm run typecheck   # 类型检查（tsconfig.check.json，覆盖 src/ 与 test/）
+npm test            # 单元测试（vitest；pretest 自动清理测试残留目录）
 npm run build       # 构建到 dist/
 ```
 
-CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22）。推送到 `main` 后比较推送前后的 `package.json` 版本号，仅版本变化且检查通过时发布 npm 并创建 GitHub Release；版本不变和 PR 均不发布。发布前由维护者确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。npm 已发布的版本跳过上传，仍可补建缺失的 Release。
+依赖说明：`tsx` 为运行时依赖（npm bin 入口经它直接运行 TS 源码，无需构建）；`fast-xml-parser` 仅测试使用，位于 devDependencies。**已知问题**：生产依赖链含 `undici@8.10.2`（经 `pi-coding-agent` → `openai`，修复版 8.12.2 被 SDK 锁版，`npm audit` 报 high 但无法在本仓库修复），需上游发版。
+
+CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22 × ubuntu / windows / macos）。推送到 `main` 后比较推送前后的 `package.json` 版本号，仅版本变化且检查通过时发布 npm 并创建 GitHub Release；版本不变和 PR 均不发布。发布前由维护者确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。npm 已发布的版本跳过上传，仍可补建缺失的 Release。
 
 后台 `status` 区分初始化、等待扫码、消息循环已启动与重启中。前台和后台桥接共享独占实例锁，重复启动拒绝；PID 文件损坏时明确报错。停止等待子进程结束，失败保留 PID 信息。Windows 自启直接使用绝对 Node 路径，启动器等待结果并传播退出码；Linux unit 保存自定义路径并配置 ExecStop。实际系统注册需要在使用机器上执行。
 
@@ -392,6 +426,10 @@ CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 2
 | 消息被重复处理 / 冲突 | 同一微信账号勿多实例同时轮询 getUpdates；确保只有一个服务在跑 |
 | `/usage` 的 Token/成本显示 0 | 模型服务未返回 usage（部分 OpenAI 兼容代理/自建 vllm 不支持 stream usage），服务端行为非统计故障；上下文占用为本地估算不受影响 |
 | 微信发文件收不到 / 日志出现 terminated | CDN 下载瞬断，1.5.3+ 自动重试（3 次递增退避、120s 超时）；仍失败则重发文件 |
+| 附件提示"超过大小上限" | 单文件默认 20 MiB，`config set maxFileBytes <字节数>` 调整；图片与文件共用同一上限 |
+| 日志出现"状态文件损坏已隔离" | JSON 损坏被自动改名 `.corrupt-*` 备份并按空数据运行，对应功能（任务记录/资料/定时任务）从空开始；原文件在备份中可人工恢复 |
+| 日志出现"PID 已被其他进程复用" | PID 被系统复用给无关进程，`daemon stop` 拒绝发信号保护了该进程；清理 `~/.pi-weixin-bridge/daemon/` 下的 pid 文件后重新 `daemon start` |
+| `daemon stop` 报"已有进程运行"但 status 显示未运行 | `.reclaim` 残留：上次强杀落在锁回收窗口；1.7.3 起持有者已死会自动回收，仍报错则手工删除 `daemon/*.reclaim` |
 | npm 安装超时 | 检查 npm registry 配置及网络连接后重试 |
 
 ## 许可
