@@ -58,3 +58,4 @@ updated: 2026-11-09
 - [合并 PR #3：pi 核心升级到 1.4.0](queries/pr-3-pi-core-upgrade.md) — 锁文件源主机冲突、保留与排除的改动、验证边界。
 - [优雅停止与可中断登录](queries/graceful-shutdown-login-abort.md) — supervisor 先 SIGTERM 后强杀、扫码登录响应退出信号与二次信号兜底。
 - [全库审查问题修复](queries/full-repo-review-fixes.md) — 332 条审查意见的确认项、误报核对与状态/配置/调度/会话修复。
+- [1.7.5 发布记录](queries/release-1-7-5.md) — 审查修复补丁版发版、CI 三平台与 npm 实际结果。

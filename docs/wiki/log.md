@@ -250,3 +250,7 @@ PR #3（fork）把 pi-coding-agent 0.82.0 升到 1.4.0，冲突只在 `package-l
 ## [2026-11-09] fix | 全库审查问题修复
 
 `ocr scan` 审查 65 个代码文件（332 条意见），核对后修复 23 组真实问题：状态读取不再把 EACCES/EISDIR 当空数据、损坏隔离失败中止、五类状态补结构校验；config.json 损坏不再阻断命令入口并增加跨进程写锁；定时任务区分用户中止与失败、finally 先释放 active；会话创建前置 busy、/sessions 改只读 peek；登录输入受总超时约束、扫码错误不再吞掉、HTTP 统一 JSON/ret 校验；附件上限受 64MiB 硬上限约束；空回复只发一条结束语；macOS PID 采集固定 UTC、Windows 停止失败重试；安装向导拒绝目录重叠；清理脚本与 npm 令牌检查加固；上下文令牌写入合并。typecheck、build 通过，187 项测试通过、7 项按平台跳过。误报已在页面记录。见 [全库审查问题修复](queries/full-repo-review-fixes.md)。
+
+## [2026-11-09] release | 发布 1.7.5
+
+版本号 1.7.4 → 1.7.5，内容为全库审查确认的 23 组修复。提交 `4aae998` 推送 main 触发发布，CI 42608259965 三平台 check 与 publish 全部成功；官方 registry `latest`/`version` 均为 1.7.5，Release v1.7.5 指向 `4aae998`，正文与 CHANGELOG 一致。本地 typecheck、build 通过，187 项测试通过、7 项按平台跳过；`npm pack` 58 个条目、135.9 kB。顺带修正 package-lock.json 根版本停留在 1.7.2 的问题。见 [1.7.5 发布记录](queries/release-1-7-5.md)。
