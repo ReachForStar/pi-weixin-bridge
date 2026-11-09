@@ -18,6 +18,7 @@ import { basename } from "node:path";
 import { stat } from "node:fs/promises";
 import { Features, type FeatureContext } from "./features/service.js";
 import type { ScheduledJob } from "./features/scheduler.js";
+import { JobCancelledError } from "./features/scheduler.js";
 
 class CommandExecutionError extends Error {
   readonly notice: string;
@@ -116,6 +117,8 @@ export class Bridge {
       clearInterval(schedulerTimer);
       lifetime.abort();
       await Promise.allSettled([...this.pending]);
+      // 合并写入窗口里的最后一次 context_token/typing ticket 必须在退出前落盘
+      this.contextStore.flush();
     }
     logger.info("[bridge] 消息循环已退出。");
   }
@@ -343,6 +346,7 @@ export class Bridge {
     signal.throwIfAborted();
     if (!reply) {
       logger.info("[out]（空回复，跳过发送）");
+      notifier.markReplied();
       await sendText("✅ 本次任务已处理完成，没有文本回复。");
       return;
     }
@@ -357,22 +361,29 @@ export class Bridge {
     const token = this.contextStore.getContextToken(job.user);
     if (!token) throw new Error("缺少微信上下文，请先向机器人发送消息");
     const task = this.tasks.run(job.key, signal, async (taskSignal) => {
-      taskSignal.throwIfAborted();
-      const selected = this.features.policy.profile(job.key, job.user);
-      if (selected.name !== job.project) throw new Error("项目已切换，请切回原项目后重新启用定时任务");
-      const scheduledKey = JSON.stringify([job.key, "schedule", job.id]);
-      this.pi.configure(scheduledKey, { ...selected, permission: selected.permission === "full" ? "full" : "read-only" });
-      await this.pi.resetSession(scheduledKey);
-      const reply = await this.pi.chat(scheduledKey, job.prompt, { signal: taskSignal, usageKey: job.key });
-      taskSignal.throwIfAborted();
-      for (const chunk of chunkText(reply || "定时任务已完成，没有文本结果。")) {
-        await this.client.sendMessage(buildTextMessage(chunk, { to: job.user, contextToken: token }));
+      try {
+        taskSignal.throwIfAborted();
+        const selected = this.features.policy.profile(job.key, job.user);
+        if (selected.name !== job.project) throw new Error("项目已切换，请切回原项目后重新启用定时任务");
+        const scheduledKey = JSON.stringify([job.key, "schedule", job.id]);
+        this.pi.configure(scheduledKey, { ...selected, permission: selected.permission === "full" ? "full" : "read-only" });
+        await this.pi.resetSession(scheduledKey);
+        const reply = await this.pi.chat(scheduledKey, job.prompt, { signal: taskSignal, usageKey: job.key });
+        taskSignal.throwIfAborted();
+        for (const chunk of chunkText(reply || "定时任务已完成，没有文本结果。")) {
+          await this.client.sendMessage(buildTextMessage(chunk, { to: job.user, contextToken: token }));
+        }
+      } catch (error) {
+        // 用户 /stop 或取消只中止本条任务的信号；桥接级 signal 未中止时转换为「已停止」，
+        // 避免把主动停止当成投递失败并永久停用周期任务
+        if (taskSignal.aborted && !signal.aborted) throw new JobCancelledError();
+        throw error;
       }
     }, `定时任务 ${job.id.slice(0, 8)}`);
     this.pending.add(task);
     try { await task; }
     catch (error) {
-      if (!signal.aborted) {
+      if (!signal.aborted && !(error instanceof JobCancelledError)) {
         try { await this.client.sendMessage(buildTextMessage(`⚠️ 定时任务 ${job.id.slice(0, 8)} 处理或投递失败，已暂停；/schedule 查看记录，检查日志后可恢复。`, { to: job.user, contextToken: token })); }
         catch (deliveryError) { logger.error(`[schedule] 失败通知未投递：${String(deliveryError)}`); }
       }

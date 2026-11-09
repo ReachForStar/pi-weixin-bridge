@@ -50,6 +50,28 @@ export class ConversationStore {
     return SessionManager.open(file, directory, this.workspace);
   }
 
+  /** 只读当前会话编号；索引缺失/损坏时返回 undefined，不创建或重建任何文件 */
+  peek(key: string): string | undefined {
+    const directory = this.directory(key);
+    const pointer = join(directory, "current.json");
+    let current: unknown;
+    try {
+      current = JSON.parse(readFileSync(pointer, "utf8"));
+    } catch {
+      return undefined;
+    }
+    if (!current || typeof current !== "object" || !("file" in current)
+      || typeof current.file !== "string" || basename(current.file) !== current.file
+      || /[\\/]/.test(current.file) || !current.file.endsWith(".jsonl")) return undefined;
+    const file = join(directory, current.file);
+    if (!existsSync(file)) return undefined;
+    try {
+      return SessionManager.open(file, directory, this.workspace).getSessionId();
+    } catch {
+      return undefined;
+    }
+  }
+
   reset(key: string): SessionManager {
     const directory = this.directory(key);
     const session = SessionManager.create(this.workspace, directory);

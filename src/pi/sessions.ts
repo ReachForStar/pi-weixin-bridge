@@ -106,7 +106,8 @@ export class PiSessionManager {
     const sessions = await this.store(key).list(key);
     let current: string | undefined;
     try {
-      current = this.store(key).open(key).getSessionId();
+      // 只读查看当前编号：open() 在索引损坏时会重建指针，/sessions 不应产生副作用
+      current = this.store(key).peek(key);
     } catch (error) {
       logger.warn(`[pi] 当前对话索引不可用，历史列表按无当前项展示：${String(error)}`);
     }
@@ -429,14 +430,21 @@ export class PiSessionManager {
   ): Promise<string> {
     if (options.signal?.aborted) throw new ChatStoppedError();
     options.onProgress?.({ stage: "preparing" });
-    const session = await this.getOrCreate(key);
     const usageKey = options.usageKey ?? key;
-    this.usage.check(usageKey);
+    // 会话创建也属于执行中：/stop、切换模型与修改配置在创建窗口内必须看到 busy
+    this.busy.add(key);
+    let session: AgentSession;
+    try {
+      session = await this.getOrCreate(key);
+      this.usage.check(usageKey);
+    } catch (error) {
+      this.busy.delete(key);
+      throw error;
+    }
     let tokens = 0;
     let cost = 0;
     let known = false;
     let unknown = false;
-    if (options.signal?.aborted) throw new ChatStoppedError();
     let current = "";
     /** 最后一条已完成的 assistant 消息的文本（可能为空）；用于区分「本轮无回复」与「沿用上轮旁白」 */
     let lastCompleted: string | undefined;
@@ -468,7 +476,6 @@ export class PiSessionManager {
         options.onProgress?.({ stage: "retrying" });
       }
     });
-    this.busy.add(key);
     const onAbort = () => {
       void session.abort().catch((error) => logger.warn(`[pi] 退出时中断任务失败: ${String(error)}`));
     };

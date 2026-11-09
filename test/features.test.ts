@@ -1,16 +1,18 @@
 import { describe, it, expect } from "vitest";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { FileLibrary } from "../src/features/library.js";
 import { TaskJournal } from "../src/features/journal.js";
-import { Scheduler } from "../src/features/scheduler.js";
+import { Scheduler, JobCancelledError } from "../src/features/scheduler.js";
 import { Approvals } from "../src/features/approvals.js";
 import { checkedPath } from "../src/features/policy.js";
+import { scopeId } from "../src/features/state.js";
 import { ConversationStore } from "../src/pi/conversation-store.js";
 import { acquireProcessLock, readPidStamp, readProcessId } from "../src/daemon/process-lock.js";
 import { runSupervisor } from "../src/daemon/supervisor.js";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { uploadFile } from "../src/ilink/media.js";
 import { IlinkClient } from "../src/ilink/client.js";
 
@@ -20,6 +22,16 @@ async function directory(): Promise<string> {
 }
 
 describe("真实文件与持久状态", () => {
+  it("状态文件语法合法但形状不符时降级，不抛类型错误", async () => {
+    const root = await directory();
+    await mkdir(join(root, "tasks"), { recursive: true });
+    writeFileSync(join(root, "tasks", `${scopeId("owner")}.json`), "null", "utf8");
+    expect(new TaskJournal(root).list("owner")).toEqual([]);
+    const schedules = join(root, "schedules.json");
+    writeFileSync(schedules, JSON.stringify({ jobs: [] }), "utf8");
+    expect(new Scheduler(schedules).list("owner")).toEqual([]);
+  });
+
   it("资料内容去重、中文检索、重启恢复和会话隔离", async () => {
     const root = await directory();
     const library = new FileLibrary(root);
@@ -181,5 +193,34 @@ describe("真实时钟与 cron-parser 调度", () => {
     expect(scheduler.list("owner")[0].status).toBe("failed");
     expect(scheduler.list("owner")[0].enabled).toBe(false);
     expect(scheduler.list("owner")[0].lastError).toContain("ENOENT");
+  });
+
+  it("用户停止周期任务后保持启用并推进下次执行", async () => {
+    const file = join(await directory(), "schedules.json");
+    writeFileSync(file, JSON.stringify([{
+      id: randomUUID(), account: "account", key: "owner", user: "owner", prompt: "p",
+      cron: "0 9 * * *", timeZone: "Asia/Shanghai", nextAt: Date.now() - 1_000, enabled: true, project: "default",
+    }]), "utf8");
+    const scheduler = new Scheduler(file);
+    await scheduler.tick("account", async () => { throw new JobCancelledError(); });
+    const job = scheduler.list("owner")[0];
+    expect(job.status).toBe("interrupted");
+    expect(job.enabled).toBe(true);
+    expect(job.nextAt).toBeGreaterThan(Date.now());
+  });
+
+  it("cron 无法计算下次时间时停用并释放任务", async () => {
+    const file = join(await directory(), "schedules.json");
+    writeFileSync(file, JSON.stringify([{
+      id: randomUUID(), account: "account", key: "owner", user: "owner", prompt: "p",
+      cron: "not-a-cron", timeZone: "Asia/Shanghai", nextAt: Date.now() - 1_000, enabled: true, project: "default",
+    }]), "utf8");
+    const scheduler = new Scheduler(file);
+    await scheduler.tick("account", async () => {});
+    expect(scheduler.list("owner")[0].enabled).toBe(false);
+    // active 已释放：下一次 tick 不会再次执行
+    let runs = 0;
+    await scheduler.tick("account", async () => { runs += 1; });
+    expect(runs).toBe(0);
   });
 });

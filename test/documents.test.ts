@@ -34,6 +34,16 @@ describe("anydoc 真实文档处理", () => {
     expect(notes.join("\n")).toContain("请先使用 read 工具读取 Markdown 文件");
   });
 
+  it("转换完成回调失败不影响已生成产物", async () => {
+    const root = await directory();
+    const file = join(root, "project-license.pdf");
+    await copyFile("test/fixtures/project-license.pdf", file);
+    await expect(prepareInboundDocuments([{ name: "project-license.pdf", path: file }], {
+      onConverted: () => { throw new Error("回调故障"); },
+    })).resolves.toHaveLength(1);
+    expect(await readFile(`${file}.md`, "utf8")).toContain("MIT License");
+  });
+
   it("Word 转 Markdown，文件内容可识别无文档扩展名的 PDF", async () => {
     const root = await directory();
     const docx = join(root, "project-license.docx");

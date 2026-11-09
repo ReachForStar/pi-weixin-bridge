@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { CronExpressionParser } from "cron-parser";
 import { STATE_DIR } from "../config.js";
-import { readJson, saveJson } from "./state.js";
+import { readJson, saveJson, isArrayOf, isPlainObject } from "./state.js";
 import { logger } from "../logger/index.js";
 
 export interface ScheduledJob {
@@ -21,6 +21,14 @@ export interface ScheduledJob {
   lastError?: string;
   project: string;
 }
+
+/** 用户 /stop 或服务退出导致的中止：不是任务失败，不应停用周期任务 */
+export class JobCancelledError extends Error {
+  constructor() {
+    super("定时任务已停止");
+    this.name = "JobCancelledError";
+  }
+}
 export class Scheduler {
   private jobs: ScheduledJob[];
   private readonly active = new Set<string>();
@@ -28,7 +36,10 @@ export class Scheduler {
     // 构造期在 Features/bridge 启动路径上：读取失败只降级为「无任务」，
     // 不能让整个服务起不来。save() 不会自动触发，原文件在下次成功读取前不会被覆盖。
     try {
-      this.jobs = readJson(file, []);
+      this.jobs = readJson(file, [], isArrayOf<ScheduledJob>((item) => isPlainObject(item)
+        && typeof item.id === "string" && typeof item.key === "string" && typeof item.account === "string"
+        && typeof item.prompt === "string" && typeof item.project === "string" && typeof item.timeZone === "string"
+        && typeof item.nextAt === "number" && typeof item.enabled === "boolean"));
     } catch (error) {
       logger.warn(`schedules.json 读取失败，本次按无定时任务运行（原文件未改动）：${String(error)}`);
       this.jobs = [];
@@ -79,11 +90,35 @@ export class Scheduler {
       this.active.add(job.id);
       job.status = "running"; job.lastRun = Date.now(); this.save();
       try { await execute({ ...job }); job.status = "completed"; job.lastError = undefined; }
-      catch (error) { job.status = signal?.aborted ? "interrupted" : "failed"; job.lastError = error instanceof Error ? error.message.slice(0, 240) : "执行或投递失败"; job.enabled = false; }
+      catch (error) {
+        if (error instanceof JobCancelledError) {
+          job.status = "interrupted"; job.lastError = undefined;
+        } else {
+          job.status = signal?.aborted ? "interrupted" : "failed";
+          job.lastError = error instanceof Error ? error.message.slice(0, 240) : "执行或投递失败";
+          // 中断（服务退出）不是任务本身失败；只有真实失败才停用，避免一次停机废掉周期任务
+          if (!signal?.aborted) job.enabled = false;
+          logger.error(`定时任务 ${job.id} 执行失败：${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+        }
+      }
       finally {
-        if (job.enabled && job.cron) job.nextAt = CronExpressionParser.parse(job.cron, { tz: job.timeZone }).next().getTime();
-        else job.enabled = false;
-        this.active.delete(job.id); this.save();
+        // 先释放 active：cron 解析或保存失败时不能让任务在当前进程里永久阻塞
+        this.active.delete(job.id);
+        if (job.status === "interrupted") {
+          // 周期任务推进到下一次；单次任务停用，避免仍在过去的时间被下一秒重复触发
+          if (job.enabled && job.cron) {
+            try { job.nextAt = CronExpressionParser.parse(job.cron, { tz: job.timeZone }).next().getTime(); }
+            catch (error) { logger.error(`定时任务 ${job.id} 的 cron 无法计算下次执行时间，已停用：${String(error)}`); job.enabled = false; }
+          } else {
+            job.enabled = false;
+          }
+        } else if (job.enabled && job.cron) {
+          try { job.nextAt = CronExpressionParser.parse(job.cron, { tz: job.timeZone }).next().getTime(); }
+          catch (error) { logger.error(`定时任务 ${job.id} 的 cron 无法计算下次执行时间，已停用：${String(error)}`); job.enabled = false; }
+        } else {
+          job.enabled = false;
+        }
+        try { this.save(); } catch (error) { logger.error(`定时任务状态写入失败：${String(error)}`); }
       }
     }
   }

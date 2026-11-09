@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { formatFromBytes, formatFromPath } from "@firecrawl/anydoc";
 import type { InboundMedia } from "../ilink/media.js";
+import { logger } from "../logger/index.js";
 
 const run = promisify(execFile);
 const WORKER = fileURLToPath(new URL("../../scripts/convert-document.mjs", import.meta.url));
@@ -121,7 +122,9 @@ export async function prepareInboundDocuments(
           throw verifyError;
         }
       }
-      options.onConverted?.(input, assets);
+      // 回调异常不能被当作转换失败：产物已生成且校验通过，删除 assets 会让 sidecar 指向不存在的文件
+      try { options.onConverted?.(input, assets); }
+      catch (error) { logger.warn(`[documents] 转换完成回调失败（产物保留）：${String(error)}`); }
       notes.push([
         `附件 ${JSON.stringify(file.name)} 已经 anydoc 转换为 Markdown（${options.ocr === "hosted" ? "逐文件授权云端 OCR" : "本地转换"}）。`,
         `原文件：${JSON.stringify(input)}`,
@@ -130,9 +133,16 @@ export async function prepareInboundDocuments(
       ].join("\n"));
       if (assets.length) notes.push(`文档内嵌图片已保留：${JSON.stringify(assets)}。需要解释图表时使用 read 工具查看，回答引用原文档名称。`);
     } catch (error) {
-      if (options.signal?.aborted) throw error;
+      if (options.signal?.aborted) {
+        // 被停止时也要清理本次可能写出的 assets 目录，否则强杀 worker 的产物会永久滞留
+        await rm(`${output}.assets`, { recursive: true, force: true }).catch(() => { /* 清理失败不影响抛出 */ });
+        throw error;
+      }
       const code = (error as { code?: string | number }).code;
-      if (code === 3) options.onNeedsOcr?.(input);
+      if (code === 3) {
+        try { options.onNeedsOcr?.(input); }
+        catch (callbackError) { logger.warn(`[documents] 需要 OCR 回调失败：${String(callbackError)}`); }
+      }
       // 区分三类失败：需要 OCR / 转换超时（含被 stop 杀掉）/ 文件本身损坏或加密
       const timedOut = code === "ETIMEDOUT" || (error as { killed?: boolean }).killed === true;
       let notice: string;
