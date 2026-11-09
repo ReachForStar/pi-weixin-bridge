@@ -342,6 +342,8 @@ CI runs typecheck + tests + build on push / PR (Node 22 across ubuntu / windows 
 | Log shows "state file corrupt, quarantined" | Corrupt JSON was renamed to a `.corrupt-*` backup and the affected feature (task records / documents / schedules) restarted empty; the original is recoverable from the backup |
 | Log shows "PID reused by another process" | The PID was reused by an unrelated process and `daemon stop` refused to signal it, protecting that process; remove the pid files under `~/.pi-weixin-bridge/daemon/` and run `daemon start` again |
 | `daemon stop` says "already running" but status shows not running | Leftover `.reclaim` file: the previous run was force-killed inside the lock-recovery window; 1.7.3 recovers it automatically when its holder is dead — otherwise delete `daemon/*.reclaim` by hand |
+| Every command fails after `config.json` is corrupted | Command entry points still load: run `daemon stop`, fix or back up and remove `~/.pi-weixin-bridge/config.json`, then run `config` or `install` again |
+| Attachment reported as too large | The limit is the smaller of `maxFileBytes` and the 64 MiB server cap; oversized attachments are rejected during download with the actual size and effective limit |
 | npm installation timeout | Check the npm registry and network connection, then retry |
 
 ## License

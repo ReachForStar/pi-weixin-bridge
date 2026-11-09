@@ -3,7 +3,7 @@ title: 微信功能服务与权限
 type: entity
 tags: [文件, 会话, 权限, 自动化, 模型]
 created: 2026-09-30
-updated: 2026-10-26
+updated: 2026-11-09
 status: active
 ---
 
@@ -16,7 +16,7 @@ status: active
 - src/features/state.ts：自定义 JSON 状态的原子写入与按会话哈希隔离。
 - src/features/library.ts：附件内容 SHA-256 去重、原件保存、基于 minisearch 的本地全文索引和来源片段。
 - src/features/journal.ts：任务记录、message_id 去重、重启中断标记和人工重试依据，不保存 context_token 与下载解密参数。
-- src/features/scheduler.ts：cron-parser 解析周期表达式和时区，单次日期要求带时区，仅投递文本，保存执行与投递状态；中断/失败暂停，不自动重复副作用。
+- src/features/scheduler.ts：cron-parser 解析周期表达式和时区，单次日期要求带时区，仅投递文本，保存执行与投递状态；用户停止与真实失败分开处理，中断的周期任务推进到下一次，cron 无法计算时先释放任务再停用。
 - src/features/policy.ts：用户访问限制、项目选择、会话模型选择、发送路径的真实目录检查和只读诊断。
 - src/features/approvals.ts：按会话绑定操作确认编号，拒绝、超时、退出后不执行。
 - src/features/service.ts：文件、会话、资料、任务、自动化、OCR、权限和用量命令入口。
@@ -31,6 +31,8 @@ status: active
 安装后 npm audit 报告 6 项已存在依赖链告警（3 moderate、3 high），涉及 pi SDK、undici 和 Vitest 相关依赖，未自动升级不兼容版本；精确升级方案待核验。
 
 ## 重要变更记录
+
+2026-11-09：全库审查修复。定时任务的用户 `/stop` 原先被当成投递失败：桥接只看到未中止的桥接级信号，仍发“已暂停”并把周期任务永久停用；现在 per-task 中止转换为 `JobCancelledError`，任务标记 interrupted 并推进下次执行。`finally` 先释放 active 再解析 cron/保存，解析失败也不会让任务永久阻塞；切换项目保留 `/model` 的选择；任务记录、资料、用量与偏好补结构校验。验证：typecheck、build 通过，187 项测试通过、7 项按平台跳过。见 [全库审查问题修复](../queries/full-repo-review-fixes.md)。
 
 十项功能已集成到微信入口，CLI、双语说明和配置示例已同步。当前预算仅按模型已报告用量限制后续任务，缺失用量标记未知；工作目录与工具权限不是操作系统沙箱。
 

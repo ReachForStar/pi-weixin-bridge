@@ -246,3 +246,7 @@ PR #3（fork）把 pi-coding-agent 0.82.0 升到 1.4.0，冲突只在 `package-l
 ## [2026-11-09] fix | 优雅停止与可中断登录
 
 `daemon stop` 时 supervisor 直接强杀桥接子进程，跳过中断通知、模型请求终止与实例锁释放；扫码登录链路不接收退出信号，Ctrl+C 后仍要等满 35 秒轮询或人工输入。改为 supervisor 先发 SIGTERM、6 秒宽限后强杀，daemon 对 supervisor 与遗留桥接统一等待 8 秒；登录的 GET、状态轮询、二维码刷新、配对码输入与轮询间隔都响应 signal；主进程首次退出启动 30 秒看门狗，第二次信号立即退出。新增真实子进程优雅/强杀/遗留桥接测试与真实连接扫码中断测试。typecheck、build 通过，177 项测试通过、7 项按平台跳过。见 [优雅停止与可中断登录](queries/graceful-shutdown-login-abort.md)。
+
+## [2026-11-09] fix | 全库审查问题修复
+
+`ocr scan` 审查 65 个代码文件（332 条意见），核对后修复 23 组真实问题：状态读取不再把 EACCES/EISDIR 当空数据、损坏隔离失败中止、五类状态补结构校验；config.json 损坏不再阻断命令入口并增加跨进程写锁；定时任务区分用户中止与失败、finally 先释放 active；会话创建前置 busy、/sessions 改只读 peek；登录输入受总超时约束、扫码错误不再吞掉、HTTP 统一 JSON/ret 校验；附件上限受 64MiB 硬上限约束；空回复只发一条结束语；macOS PID 采集固定 UTC、Windows 停止失败重试；安装向导拒绝目录重叠；清理脚本与 npm 令牌检查加固；上下文令牌写入合并。typecheck、build 通过，187 项测试通过、7 项按平台跳过。误报已在页面记录。见 [全库审查问题修复](queries/full-repo-review-fixes.md)。

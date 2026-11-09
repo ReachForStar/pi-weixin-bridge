@@ -430,6 +430,8 @@ CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 2
 | 日志出现"状态文件损坏已隔离" | JSON 损坏被自动改名 `.corrupt-*` 备份并按空数据运行，对应功能（任务记录/资料/定时任务）从空开始；原文件在备份中可人工恢复 |
 | 日志出现"PID 已被其他进程复用" | PID 被系统复用给无关进程，`daemon stop` 拒绝发信号保护了该进程；清理 `~/.pi-weixin-bridge/daemon/` 下的 pid 文件后重新 `daemon start` |
 | `daemon stop` 报"已有进程运行"但 status 显示未运行 | `.reclaim` 残留：上次强杀落在锁回收窗口；1.7.3 起持有者已死会自动回收，仍报错则手工删除 `daemon/*.reclaim` |
+| `config.json` 损坏后所有命令报错 | 命令入口仍可加载：先 `daemon stop`，修正或备份删除 `~/.pi-weixin-bridge/config.json` 后重新运行 `config` 或 `install` |
+| 附件提示超过大小上限 | 上限取 `maxFileBytes` 与 64MiB 服务器硬上限中的较小值；超限在下载阶段拒绝，提示中的字节数为实际大小与生效上限 |
 | npm 安装超时 | 检查 npm registry 配置及网络连接后重试 |
 
 ## 许可

@@ -3,7 +3,7 @@ title: 对话恢复与任务通知
 type: entity
 tags: [会话, 持久化, 通知]
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-11-09
 status: active
 ---
 
@@ -13,8 +13,8 @@ status: active
 
 ## 关键文件与接口
 
-- src/pi/conversation-store.ts：使用 SDK SessionManager 保存和打开 JSONL 会话，不自行解析会话格式。状态目录下 sessions 保存历史，current.json 原子切换当前会话。
-- src/pi/sessions.ts：复用持久会话；对话与 /new 使用同一串行队列；每条任务开始后才绑定其图片回复上下文。
+- src/pi/conversation-store.ts：使用 SDK SessionManager 保存和打开 JSONL 会话，不自行解析会话格式。状态目录下 sessions 保存历史，current.json 原子切换当前会话；peek() 只读当前编号，不重建或改写索引。
+- src/pi/sessions.ts：复用持久会话；对话与 /new 使用同一串行队列；会话创建前即置位 busy，创建失败清理；每条任务开始后才绑定其图片回复上下文。
 - src/message/task-notifier.ts：开始确认、每 30 秒进度、最终通知串行发送；工具参数和原始错误不进入通知。
 - src/bridge.ts：账号和微信对话构成会话标识，报告耗时和处理阶段；普通回复作为完成结果，无文本时提示完成；失败和停止分别提示。
 - src/message/task-queue.ts：同一对话从附件处理到回复发送全流程串行，其他对话独立。/new 和设置下一条消息指令也按接收顺序执行。
@@ -24,6 +24,8 @@ status: active
 复用现有 pi SDK 与 Node 标准库。会话目录用工作目录和会话标识的 SHA-256 值隔离，避免目录名包含微信标识及路径分隔符。POSIX 目录 700、文件 600；Windows 依赖用户目录权限。
 
 ## 重要变更记录
+
+2026-11-09：全库审查修复会话生命周期边界。`busy` 原先在 `getOrCreate()` 之后才置位，会话解析模型、加载资源与绑定扩展的窗口内 `/stop` 返回“没有任务”，配置修改可能误删正在创建的会话；现在创建前置位并在失败时清理。`/sessions` 原先调用会自愈索引的 `open()`，索引损坏时可能改写当前指针；新增只读 `peek()`。验证：typecheck、build 通过，187 项测试通过、7 项按平台跳过。见 [全库审查问题修复](../queries/full-repo-review-fixes.md)。
 
 2026-09-30：类型检查、构建与全部测试通过（115 通过，1 项 POSIX 权限测试在 Windows 跳过）。新增跨 Node 进程读取 SDK 会话、/new 后立即恢复、目录隔离、索引损坏与显式重置、取消任务后的队列恢复、通知节流及生命周期测试。/new 保留旧记录且保存新会话头，保证立即重启后不恢复旧上下文。恢复已保存的对话，不自动重做重启前未完成的任务。服务退出信号关闭通知并请求中断模型任务。
 

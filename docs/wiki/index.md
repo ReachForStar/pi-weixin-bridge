@@ -57,3 +57,4 @@ updated: 2026-11-09
 - [SDK 会话不触发 session_start](queries/sdk-session-start-hooks.md) — 桥接需补调 bindExtensions，否则订阅该事件的 hook 全不生效。
 - [合并 PR #3：pi 核心升级到 1.4.0](queries/pr-3-pi-core-upgrade.md) — 锁文件源主机冲突、保留与排除的改动、验证边界。
 - [优雅停止与可中断登录](queries/graceful-shutdown-login-abort.md) — supervisor 先 SIGTERM 后强杀、扫码登录响应退出信号与二次信号兜底。
+- [全库审查问题修复](queries/full-repo-review-fixes.md) — 332 条审查意见的确认项、误报核对与状态/配置/调度/会话修复。
