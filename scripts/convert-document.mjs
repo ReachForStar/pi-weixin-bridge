@@ -35,7 +35,10 @@ try {
       const extension = extensions[asset.mediaType];
       if (!extension) continue;
       await mkdir(assetsDir, { recursive: true });
-      const path = `${assetsDir}/${asset.id}.${extension}`;
+      // asset.id 来自文档解析结果：含 ../、分隔符或绝对路径片段时会把文件写到 assetsDir 外
+      const safeId = String(asset.id ?? "").replace(/[^A-Za-z0-9_-]/g, "_");
+      if (!safeId) continue;
+      const path = `${assetsDir}/${safeId}.${extension}`;
       await writeFile(path, asset.data, { flag: "wx" });
       assets.push(path);
     }
@@ -56,5 +59,5 @@ try {
   process.stdout.write(JSON.stringify({ assets }));
 } catch (error) {
   process.stderr.write(error instanceof Error ? error.message : String(error));
-  process.exitCode = error.code === "needsOcr" ? 3 : 1;
+  process.exitCode = error?.code === "needsOcr" ? 3 : 1;
 }
