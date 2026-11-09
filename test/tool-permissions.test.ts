@@ -75,7 +75,7 @@ describe("真实 SDK 工具权限与导出", () => {
     expect(policy.profile("reader", "reader").permission).toBe("read-only");
     const settings = loadSettings();
     writeFileSync(CONFIG_FILE, JSON.stringify({ ...settings, access: null }), "utf8");
-    expect(loadSettings).toThrow("config.json 无法读取");
+    expect(loadSettings).toThrow("config.json 校验失败");
     writeFileSync(CONFIG_FILE, JSON.stringify(settings), "utf8");
     saveSettings({ projects: {} });
     expect(() => policy.profile("reader", "reader")).toThrow("已从配置中移除");

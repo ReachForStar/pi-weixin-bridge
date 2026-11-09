@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { STATE_DIR } from "../config.js";
+import { STATE_DIR, CONFIG_ERROR } from "../config.js";
 import { hardenStateDir } from "../account.js";
 import { readProcessId, readPidStamp, pidIsOurs } from "./process-lock.js";
 import { matchesStartTime } from "./pid-identity.js";
@@ -111,6 +111,7 @@ export function daemonStatus(): DaemonStatus {
  * POSIX 上 detached 使其成为进程组组长，stop 时可整组 kill；Windows 上用 taskkill /t 杀树。
  */
 export async function startDaemon(): Promise<{ ok: boolean; message: string }> {
+  if (CONFIG_ERROR) return { ok: false, message: CONFIG_ERROR.message };
   const st = daemonStatus();
   if (st.running) {
     const runtime = readRuntimeStatus();

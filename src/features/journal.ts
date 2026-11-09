@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ScopedState } from "./state.js";
+import { ScopedState, isArrayOf, isPlainObject } from "./state.js";
 import { logger } from "../logger/index.js";
 
 export interface TaskRecord {
@@ -21,7 +21,11 @@ const MAX_RECORDS = 500;
 export class TaskJournal {
   private readonly state: ScopedState<TaskRecord[]>;
   private readonly initialized = new Set<string>();
-  constructor(root?: string) { this.state = new ScopedState("tasks", () => [], root); }
+  constructor(root?: string) {
+    this.state = new ScopedState("tasks", () => [], root,
+      isArrayOf<TaskRecord>((item) => isPlainObject(item) && typeof item.id === "string"
+        && typeof item.text === "string" && typeof item.state === "string" && Array.isArray(item.files)));
+  }
   /** 读取记录（返回副本，避免调用方改动内存态却不落盘） */
   /** 首次接触该 key 时把残留的 running 标记为中断（进程重启后不可能还在执行） */
   private repairOnce(key: string, entries: TaskRecord[]): boolean {

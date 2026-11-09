@@ -1,10 +1,15 @@
 import { loadSettings } from "../config.js";
-import { ScopedState } from "./state.js";
+import { ScopedState, isPlainObject } from "./state.js";
 
 export interface UsageDay { tokens: number; cost: number; turns: number; unknown: number }
 export class UsageLedger {
   private readonly state: ScopedState<Record<string, UsageDay>>;
-  constructor(root?: string) { this.state = new ScopedState("usage", () => ({}), root); }
+  constructor(root?: string) {
+    this.state = new ScopedState("usage", () => ({}), root,
+      (value): value is Record<string, UsageDay> => isPlainObject(value) && Object.values(value).every((day) =>
+        isPlainObject(day) && typeof day.tokens === "number" && typeof day.cost === "number"
+        && typeof day.turns === "number" && (day.unknown === undefined || typeof day.unknown === "number")));
+  }
   private day(): string {
     return new Intl.DateTimeFormat("en-CA", { timeZone: loadSettings().budget?.timeZone ?? "Asia/Shanghai",
       year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());

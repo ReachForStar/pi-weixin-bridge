@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, renameSync } from "node:fs";
+import { readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { STATE_DIR } from "../config.js";
 import { logger } from "../logger/index.js";
@@ -22,7 +22,9 @@ function isolate(file: string, reason: unknown): void {
     renameSync(file, backup);
     logger.error(`状态文件损坏已隔离：${file}（原因：${String(reason)}），备份为 ${backup}，本次按空数据处理`);
   } catch (renameError) {
-    logger.error(`状态文件损坏且无法隔离：${file}（读取原因：${String(reason)}；改名原因：${String(renameError)}），本次按空数据处理`);
+    logger.error(`状态文件损坏且无法隔离：${file}（读取原因：${String(reason)}；改名原因：${String(renameError)}）`);
+    // 继续按空数据返回会让调用方的 set() 覆盖唯一现场：中止本次操作，保留人工恢复机会。
+    throw new Error(`状态文件损坏且无法隔离，本次操作中止以避免覆盖原文件：${file}`, { cause: renameError });
   }
 }
 
@@ -37,7 +39,8 @@ function isolate(file: string, reason: unknown): void {
 export function readJson<T>(file: string, empty: T, isValid?: (value: unknown) => value is T): T {
   let text: string;
   try {
-    if (!existsSync(file)) return empty;
+    // 直接读取，不用 existsSync 预检：existsSync 会把 EACCES/EMFILE 等错误也当成「不存在」，
+    // 导致调用方的读-改-写用空快照覆盖真实文件。只有 ENOENT 才代表没有状态。
     text = readFileSync(file, "utf8");
   } catch (error) {
     if (isMissingFile(error)) return empty;

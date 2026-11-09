@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { loadSettings, WORKSPACE, MODEL_REF, STATE_DIR } from "../config.js";
-import { ScopedState } from "./state.js";
+import { ScopedState, isPlainObject } from "./state.js";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export type Permission = "read-only" | "guarded" | "full";
@@ -26,7 +26,10 @@ export interface ResolvedProfile extends ProjectProfile {
 interface Selection { project?: string; model?: string }
 
 export class Policy {
-  private readonly choices = new ScopedState<Selection>("preferences", () => ({}));
+  private readonly choices = new ScopedState<Selection>("preferences", () => ({}), undefined,
+    (value): value is Selection => isPlainObject(value)
+      && (value.project === undefined || typeof value.project === "string")
+      && (value.model === undefined || typeof value.model === "string"));
   identity(user: string): { allowed: boolean; admin: boolean; permission: Permission } {
     const access = loadSettings().access;
     if (!access) return { allowed: true, admin: true, permission: "full" };
@@ -51,7 +54,8 @@ export class Policy {
   selectedProject(key: string): string { return this.choices.get(key).project ?? "default"; }
   select(key: string, name: string): void {
     if (!this.projects().includes(name)) throw new Error("项目不存在，请用 /project 查看已配置项目");
-    this.choices.set(key, { project: name });
+    // 保留已选模型：覆盖整个偏好会让 /model 的选择在切换项目时被静默清空
+    this.choices.set(key, { ...this.choices.get(key), project: name });
   }
   setModel(key: string, model: string): void {
     this.choices.set(key, { ...this.choices.get(key), model });

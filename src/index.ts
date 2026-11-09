@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { CONFIG, STATE_DIR } from "./config.js";
+import { CONFIG, STATE_DIR, loadSettings } from "./config.js";
 import { IlinkClient, SessionTimeoutError } from "./ilink/client.js";
 import { AuthError } from "./ilink/errors.js";
 import { loginWithQR, type AccountState } from "./ilink/login.js";
@@ -37,6 +37,8 @@ async function waitForHeadlessLogin(
 }
 
 async function main(): Promise<void> {
+  // 配置无效时立即失败：不能带着缺失的访问限制启动，也不能在错误的默认目录里继续写状态
+  loadSettings();
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
   const release = acquireProcessLock(join(STATE_DIR, "instance.pid"));
   const controller = new AbortController();

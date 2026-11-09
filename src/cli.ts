@@ -209,6 +209,9 @@ async function install(args: string[]): Promise<void> {
         PI_WEIXIN_WORKSPACE: choice.workspace,
       },
     });
+    if (r.error || r.status === null) {
+      console.error(`❌ 以新路径重启安装失败：${r.error ? String(r.error) : `子进程被信号 ${r.signal ?? "未知"} 终止`}`);
+    }
     process.exit(r.status ?? 1);
   }
   console.log("");

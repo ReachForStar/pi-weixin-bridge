@@ -10,7 +10,10 @@ import { setTimeout as delay } from "node:timers/promises";
 function isValidAccount(value: unknown): value is AccountState {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const state = value as Record<string, unknown>;
-  return typeof state.botToken === "string" && state.botToken.length > 0;
+  return typeof state.botToken === "string" && state.botToken.length > 0
+    && typeof state.accountId === "string" && state.accountId.length > 0
+    && typeof state.baseUrl === "string" && state.baseUrl.length > 0
+    && (state.userId === undefined || typeof state.userId === "string");
 }
 
 /** 读取已保存的微信账号凭据；损坏/不可读时 warn 并返回 null（不静默吞错，便于区分“未登录”与“文件损坏”） */

@@ -42,6 +42,15 @@ describe("pid-identity 解析", () => {
   });
 });
 
+describe("状态文件读取", () => {
+  it("非 ENOENT 的读取错误不会被当成空数据", async () => {
+    const dir = await directory();
+    // 用目录触发 EISDIR：existsSync 预检会把它误判为「存在但读失败」，
+    // 直接读取则必须抛出，避免调用方用空快照覆盖后续状态
+    expect(() => readJson(dir, [])).toThrow("状态文件读取失败");
+  });
+});
+
 describe("进程锁", () => {
   it("写入纯数字 pid，启动时间放旁路文件", async () => {
     const file = join(await directory(), "instance.pid");

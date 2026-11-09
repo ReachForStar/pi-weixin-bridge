@@ -5,7 +5,7 @@ import { logger } from "../logger/index.js";
 import { basename, dirname, join } from "node:path";
 import MiniSearch from "minisearch";
 import { STATE_DIR } from "../config.js";
-import { ScopedState, scopeId } from "./state.js";
+import { ScopedState, scopeId, isArrayOf, isPlainObject } from "./state.js";
 
 /** 单文件索引上限与单次检索总预算（防止一次 /files find 读入过多内容） */
 const SEARCH_MAX_BYTES_PER_FILE = 2 * 1024 * 1024;
@@ -25,7 +25,9 @@ export interface LibraryFile {
 export class FileLibrary {
   private readonly state: ScopedState<LibraryFile[]>;
   constructor(private readonly root = STATE_DIR) {
-    this.state = new ScopedState("documents", () => [], root);
+    this.state = new ScopedState("documents", () => [], root,
+      isArrayOf<LibraryFile>((item) => isPlainObject(item) && typeof item.id === "string"
+        && typeof item.name === "string" && typeof item.path === "string" && typeof item.hash === "string"));
   }
   list(key: string): LibraryFile[] { return this.state.get(key); }
   get(key: string, id: string): LibraryFile {

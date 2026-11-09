@@ -59,12 +59,30 @@ describe("config 路径解析", () => {
     expect(STATE_DIR).toBe(join(home, "env-state"));
   });
 
-  it("config.json 损坏时拒绝启动", async () => {
+  it("config.json 损坏时命令入口仍可加载，但读取配置与启动被拒绝", async () => {
     const bootstrap = join(home, ".pi-weixin-bridge");
     mkdirSync(bootstrap, { recursive: true });
     writeFileSync(join(bootstrap, "config.json"), "{not json", "utf8");
     vi.resetModules();
-    await expect(import("../src/config.js")).rejects.toThrow("config.json 无法读取");
+    const config = await import("../src/config.js");
+    expect(config.CONFIG_ERROR).toBeInstanceOf(Error);
+    expect(() => config.loadSettings()).toThrow("config.json 无法读取");
+    // 运维命令（daemon stop/login）仍能解析默认状态目录
+    expect(config.STATE_DIR).toBe(bootstrap);
+  });
+
+  it("切换项目保留已选模型", async () => {
+    const bootstrap = join(home, ".pi-weixin-bridge");
+    mkdirSync(bootstrap, { recursive: true });
+    writeFileSync(join(bootstrap, "config.json"), JSON.stringify({
+      projects: { p: { workspace: join(home, "p") } },
+    }), "utf8");
+    vi.resetModules();
+    const { Policy } = await import("../src/features/policy.js");
+    const policy = new Policy();
+    policy.setModel("chat", "provider/m1");
+    policy.select("chat", "p");
+    expect(policy.profile("chat", "user").model).toBe("provider/m1");
   });
 
   it("defaultWorkspace 按平台取值", async () => {

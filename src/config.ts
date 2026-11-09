@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { writeFileAtomic } from "./fs-atomic.js";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -70,19 +70,51 @@ export function validateSettings(data: unknown): asserts data is BridgeSettings 
   }
 }
 
-/** 配置损坏时拒绝启动，避免访问限制被误判为未配置。 */
-export function loadSettings(): BridgeSettings {
-  if (!existsSync(CONFIG_FILE)) return {};
+interface SettingsRead {
+  settings: BridgeSettings;
+  error?: Error;
+}
+
+/**
+ * 读取配置。校验失败时仍尽量保留路径字段，供 `daemon stop`、`login` 等运维命令找到正确的
+ * 状态目录；访问限制与模型选择不会被降级使用（loadSettings 仍然抛错）。
+ * 模块加载期不能直接抛错：否则 config.json 损坏会让所有 CLI 命令（包括修复入口）都起不来。
+ */
+function readSettings(): SettingsRead {
+  if (!existsSync(CONFIG_FILE)) return { settings: {} };
+  let parsed: unknown;
   try {
-    const data: unknown = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-    validateSettings(data);
-    return data;
+    parsed = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
   } catch (error) {
-    throw new Error("config.json 无法读取，请修复配置后重试", { cause: error });
+    return { settings: {}, error: new Error(`config.json 无法读取，请修复配置后重试：${CONFIG_FILE}`, { cause: error }) };
+  }
+  try {
+    validateSettings(parsed);
+    return { settings: parsed };
+  } catch (error) {
+    const salvage: BridgeSettings = {};
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      for (const field of ["stateDir", "workspace", "model"] as const) {
+        if (typeof record[field] === "string" && record[field]) salvage[field] = record[field];
+      }
+    }
+    return { settings: salvage, error: new Error(`config.json 校验失败，请修复配置后重试：${CONFIG_FILE}`, { cause: error }) };
   }
 }
 
-const settings = loadSettings();
+/** 配置校验失败时拒绝读取；访问限制不能因配置损坏被当作未配置。 */
+export function loadSettings(): BridgeSettings {
+  const read = readSettings();
+  if (read.error) throw read.error;
+  return read.settings;
+}
+
+/** 模块加载时的配置错误快照（CLI 启动时给出明确提示用），不阻止命令入口加载 */
+const initial = readSettings();
+export const CONFIG_ERROR = initial.error;
+
+const settings = initial.settings;
 
 /** 未选择时要求安装配置，不预设供应方。 */
 export const DEFAULT_MODEL_REF = "";
@@ -90,18 +122,45 @@ export const DEFAULT_MODEL_REF = "";
 export const MODEL_REF =
   process.env.PI_WEIXIN_MODEL || settings.model || DEFAULT_MODEL_REF;
 
+/** 跨进程配置写锁：install 向导与 config set 可能同时运行，避免后写覆盖先写 */
+function acquireConfigLock(): () => void {
+  const lock = `${CONFIG_FILE}.lock`;
+  const deadline = Date.now() + 3_000;
+  for (;;) {
+    try {
+      closeSync(openSync(lock, "wx", 0o600));
+      return () => {
+        try { unlinkSync(lock); } catch { /* 已被清理 */ }
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > 10_000) { unlinkSync(lock); continue; }
+      } catch { /* 锁刚被释放，下一轮重试 */ }
+      if (Date.now() >= deadline) throw new Error("配置文件正被其他进程修改，请稍后重试");
+      // CLI 写入很短，用同步小睡避免把 saveSettings 改成异步
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+}
+
 /** 合并写入 config.json（保留其他字段；值为 undefined 表示删除该字段） */
 export function saveSettings(patch: BridgeSettings): void {
-  const next: BridgeSettings = { ...loadSettings() };
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === undefined) delete next[k as keyof BridgeSettings];
-    else (next as Record<string, unknown>)[k] = v;
-  }
-  validateSettings(next);
   mkdirSync(BOOTSTRAP_DIR, { recursive: true });
-  // 共享原子写：循环写满 + fsync 文件与父目录，避免断电留下 0 字节 config.json
-  // （loadSettings 在模块加载期执行，配置损坏会让 CLI 全线不可用）
-  writeFileAtomic(CONFIG_FILE, JSON.stringify(next, null, 2), 0o600);
+  const release = acquireConfigLock();
+  try {
+    const next: BridgeSettings = { ...loadSettings() };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) delete next[k as keyof BridgeSettings];
+      else (next as Record<string, unknown>)[k] = v;
+    }
+    validateSettings(next);
+    // 共享原子写：循环写满 + fsync 文件与父目录，避免断电留下 0 字节 config.json
+    // （loadSettings 在模块加载期执行，配置损坏会让 CLI 全线不可用）
+    writeFileAtomic(CONFIG_FILE, JSON.stringify(next, null, 2), 0o600);
+  } finally {
+    release();
+  }
 }
 
 /** 桥接版本（读包根 package.json；dist 与 src 下均指向仓库/包根） */
