@@ -15,9 +15,9 @@ import { scopeId, saveJson } from "./features/state.js";
 /** 退出信号是否已触发（区分“信号导致的等待中断”与真正的致命错误） */
 let shuttingDown = false;
 
-async function doLogin(client: IlinkClient): Promise<AccountState> {
+async function doLogin(client: IlinkClient, signal: AbortSignal): Promise<AccountState> {
   logger.info("[main] 开始扫码登录...");
-  const state = await loginWithQR(client);
+  const state = await loginWithQR(client, signal);
   saveState(state);
   return state;
 }
@@ -40,9 +40,22 @@ async function main(): Promise<void> {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
   const release = acquireProcessLock(join(STATE_DIR, "instance.pid"));
   const controller = new AbortController();
-  const shutdown = () => {
+  let signalCount = 0;
+  const shutdown = (signal: NodeJS.Signals) => {
+    signalCount += 1;
+    const code = signal === "SIGINT" ? 130 : 143;
+    if (signalCount > 1) {
+      logger.warn("[main] 再次收到退出信号，强制退出。");
+      process.exit(code);
+    }
     shuttingDown = true;
     logger.info("[main] 收到退出信号，正在停止...");
+    // 兜底看门狗：模型请求或网络调用不响应中断时也要能结束进程。
+    // 定时器 unref：正常停机后事件循环为空会自然退出，只有残留句柄才会触发它。
+    setTimeout(() => {
+      logger.error("[main] 停止后 30 秒仍有未释放的资源，强制退出。");
+      process.exit(code);
+    }, 30_000).unref();
     controller.abort();
   };
   process.on("SIGINT", shutdown);
@@ -65,7 +78,7 @@ async function main(): Promise<void> {
   if (!state?.botToken) {
     state = headless
       ? await waitForHeadlessLogin(null, controller.signal)
-      : await doLogin(client);
+      : await doLogin(client, controller.signal);
   } else {
     logger.info(`[main] 复用已保存账号 ${state.accountId}`);
   }
@@ -88,7 +101,7 @@ async function main(): Promise<void> {
           }
           state = headless
             ? await waitForHeadlessLogin(state, controller.signal)
-            : (await doLogin(client));
+            : (await doLogin(client, controller.signal));
           client.setToken(state.botToken);
           client.setBaseUrl(state.baseUrl);
           continue;

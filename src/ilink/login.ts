@@ -1,4 +1,5 @@
 import qrcode from "qrcode-terminal";
+import { setTimeout as delay } from "node:timers/promises";
 import { IlinkClient } from "./client.js";
 import { CONFIG } from "../config.js";
 
@@ -18,20 +19,31 @@ function showQR(qrcodeUrl: string): void {
   process.stdout.write(`（若无法扫码，可打开链接：${qrcodeUrl}）\n\n`);
 }
 
-async function readLine(prompt: string): Promise<string> {
+async function readLine(prompt: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   const { createInterface } = await import("node:readline/promises");
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const ans = await rl.question(prompt);
-  rl.close();
-  return ans.trim();
+  // 退出信号到达时关闭 readline：挂起的 question 必须以 AbortError 结束，
+  // 否则停止服务时仍会卡在等待输入上（Ctrl+C 看不到反应）。
+  let rejectAbort: ((reason: unknown) => void) | undefined;
+  const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
+  const onAbort = () => { rl.close(); rejectAbort?.(signal?.reason); };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    return (await Promise.race([rl.question(prompt), aborted])).trim();
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    rl.close();
+  }
 }
 
 /**
  * 扫码登录：获取二维码 → 长轮询状态 → 返回 bot_token。
  * 处理 IDC 重定向（scaned_but_redirect）、二维码过期刷新、配对码（need_verifycode）。
+ * signal 让停止服务时的 Ctrl+C/SIGTERM 能立即结束轮询与输入等待。
  */
-export async function loginWithQR(client: IlinkClient): Promise<AccountState> {
-  let qr = await client.fetchQRCode();
+export async function loginWithQR(client: IlinkClient, signal?: AbortSignal): Promise<AccountState> {
+  let qr = await client.fetchQRCode(undefined, signal);
   let pollBaseUrl = CONFIG.fixedBaseUrl;
   showQR(qr.qrcode_img_content);
 
@@ -41,7 +53,8 @@ export async function loginWithQR(client: IlinkClient): Promise<AccountState> {
   let scannedPrinted = false;
 
   while (Date.now() < deadline) {
-    const status = await client.pollQRStatus(qr.qrcode, pollBaseUrl, pendingVerifyCode);
+    signal?.throwIfAborted();
+    const status = await client.pollQRStatus(qr.qrcode, pollBaseUrl, pendingVerifyCode, signal);
 
     switch (status.status) {
       case "wait":
@@ -59,7 +72,7 @@ export async function loginWithQR(client: IlinkClient): Promise<AccountState> {
         const prompt = pendingVerifyCode
           ? "❌ 数字不匹配，请重新输入微信显示的数字："
           : "请输入手机微信显示的数字以继续连接：";
-        pendingVerifyCode = await readLine(prompt);
+        pendingVerifyCode = await readLine(prompt, signal);
         continue; // 立即带配对码进入下一次轮询
       }
 
@@ -76,7 +89,7 @@ export async function loginWithQR(client: IlinkClient): Promise<AccountState> {
           throw new Error("二维码多次过期，登录终止，请重试");
         }
         process.stdout.write(`\n[login] 二维码已过期，刷新中（${refreshCount}/${MAX_QR_REFRESH}）...\n`);
-        qr = await client.fetchQRCode();
+        qr = await client.fetchQRCode(undefined, signal);
         pollBaseUrl = CONFIG.fixedBaseUrl;
         scannedPrinted = false;
         pendingVerifyCode = undefined;
@@ -104,7 +117,7 @@ export async function loginWithQR(client: IlinkClient): Promise<AccountState> {
       }
     }
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await delay(1000, undefined, { signal });
   }
 
   throw new Error("登录超时，请重试");

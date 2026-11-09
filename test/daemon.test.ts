@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { writePidFiles } from "../src/daemon/pid-identity.js";
 import {
   isPidAlive,
   nextBackoffMs,
@@ -16,6 +17,8 @@ import { parseEtime, fmtMemory, fmtUptime, renderStatusTable } from "../src/daem
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("daemon 退避策略", () => {
   it("崩溃循环时指数退避并设上限", () => {
@@ -119,6 +122,103 @@ describe("runSupervisor 重启循环", () => {
     expect(existsSync(bridgePidFile)).toBe(false);
     rmSync(dir, { recursive: true, force: true });
   });
+});
+
+describe("优雅停止子进程", () => {
+  const posix = process.platform !== "win32";
+
+  async function waitForFile(file: string, timeoutMs = 3000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (existsSync(file)) return;
+      await sleep(20);
+    }
+    throw new Error(`等待文件超时：${file}`);
+  }
+
+  it.skipIf(!posix)("停止请求先发送 SIGTERM，子进程可完成收尾再退出", async () => {
+    mkdirSync("tmp", { recursive: true });
+    const dir = mkdtempSync(resolve("tmp", "sup-graceful-"));
+    const ready = join(dir, "child.ready");
+    const marker = join(dir, "child.stopped");
+    const script = [
+      'const fs = require("node:fs");',
+      `fs.writeFileSync(${JSON.stringify(ready)}, "ready");`,
+      `process.on("SIGTERM", () => { fs.writeFileSync(${JSON.stringify(marker)}, "graceful"); setTimeout(() => process.exit(0), 50); });`,
+      "setInterval(() => {}, 1000);",
+    ].join("\n");
+    let stop = false;
+    const running = runSupervisor({
+      childArgs: ["-e", script],
+      daemonDir: dir,
+      baseBackoffMs: 20,
+      stopGraceMs: 3_000,
+      shouldStop: () => stop,
+    });
+    await waitForFile(ready);
+    await waitForFile(join(dir, "bridge.pid"));
+    stop = true;
+    await running;
+    expect(readFileSync(marker, "utf8")).toBe("graceful");
+    expect(existsSync(join(dir, "supervisor.pid"))).toBe(false);
+    expect(existsSync(join(dir, "bridge.pid"))).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  }, 15_000);
+
+  it.skipIf(!posix)("宽限期内不退出时升级为强杀", async () => {
+    mkdirSync("tmp", { recursive: true });
+    const dir = mkdtempSync(resolve("tmp", "sup-force-"));
+    const ready = join(dir, "child.ready");
+    const script = [
+      'const fs = require("node:fs");',
+      `fs.writeFileSync(${JSON.stringify(ready)}, "ready");`,
+      'process.on("SIGTERM", () => {});',
+      "setInterval(() => {}, 1000);",
+    ].join("\n");
+    let stop = false;
+    const running = runSupervisor({
+      childArgs: ["-e", script],
+      daemonDir: dir,
+      baseBackoffMs: 20,
+      stopGraceMs: 200,
+      shouldStop: () => stop,
+    });
+    await waitForFile(ready);
+    await waitForFile(join(dir, "bridge.pid"));
+    const childPid = Number(readFileSync(join(dir, "bridge.pid"), "utf8").trim());
+    stop = true;
+    await running;
+    expect(isPidAlive(childPid)).toBe(false);
+    expect(existsSync(join(dir, "bridge.pid"))).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  }, 15_000);
+
+  it.skipIf(!posix)("停止遗留桥接进程时同样先发 SIGTERM", async () => {
+    const root = mkdtempSync(resolve("tmp", "orphan-stop-"));
+    const daemonDir = join(root, "daemon");
+    mkdirSync(daemonDir, { recursive: true });
+    const ready = join(root, "child.ready");
+    const marker = join(root, "child.stopped");
+    const script = [
+      'const fs = require("node:fs");',
+      `fs.writeFileSync(${JSON.stringify(ready)}, "ready");`,
+      `process.on("SIGTERM", () => { fs.writeFileSync(${JSON.stringify(marker)}, "graceful"); process.exit(0); });`,
+      "setInterval(() => {}, 1000);",
+    ].join("\n");
+    const child = spawn(process.execPath, ["-e", script], { stdio: "ignore" });
+    const exited = new Promise<void>((done) => child.on("exit", () => done()));
+    await waitForFile(ready);
+    writePidFiles(join(daemonDir, "bridge.pid"), child.pid);
+    vi.stubEnv("PI_WEIXIN_STATE_DIR", root);
+    vi.resetModules();
+    const { stopDaemon } = await import("../src/daemon/daemon.js");
+    const result = await stopDaemon();
+    expect(result.stopped).toBe(true);
+    expect(readFileSync(marker, "utf8")).toBe("graceful");
+    expect(existsSync(join(daemonDir, "bridge.pid"))).toBe(false);
+    await exited;
+    rmSync(root, { recursive: true, force: true });
+  }, 20_000);
 });
 
 describe("status 表格渲染", () => {

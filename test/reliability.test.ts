@@ -46,6 +46,17 @@ describe("真实网络与退出信号", () => {
       .rejects.toMatchObject({ name: "AbortError" });
   });
 
+  it("扫码状态轮询响应退出信号，不必等满 35 秒", async () => {
+    // 服务器保持连接不返回正文；只有外部信号能结束这次轮询
+    const url = await listen(() => { /* 挂起 */ });
+    const controller = new AbortController();
+    const started = Date.now();
+    const pending = new IlinkClient(url).pollQRStatus("qr-code", url, undefined, controller.signal);
+    setTimeout(() => controller.abort(), 100);
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(Date.now() - started).toBeLessThan(1500);
+  }, 3000);
+
   it("失败退避期间退出无需等待三秒", async () => {
     const controller = new AbortController();
     const url = await listen((_request, response) => {

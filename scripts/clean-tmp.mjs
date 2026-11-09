@@ -10,7 +10,7 @@ const TEST_PREFIXES = [
   "account-reliability-", "bridge-reliability-", "config-cli-", "config-input-",
   "conversation-test-", "document-test-", "feature-check-", "model-check-",
   "notification-test-", "pidcheck-", "piwx-media-", "piwx-wiz-", "queue-documents-",
-  "session-queue-", "tool-check-", "wizard-",
+  "session-queue-", "tool-check-", "wizard-", "orphan-stop-", "sup-graceful-", "sup-force-",
 ];
 
 let removed = 0;

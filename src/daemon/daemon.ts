@@ -37,6 +37,12 @@ export const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
 export const BASE_BACKOFF_MS = 3_000;
 export const MAX_BACKOFF_MS = 60_000;
+/**
+ * 停止时等待桥接进程自行退出的宽限期。
+ * 桥接收到 SIGTERM 后要中断模型请求、结束通知并释放状态锁；直接强杀会丢掉这些收尾。
+ * supervisor 内部的子进程宽限（6 秒）短于本值，保证升级强杀发生在 daemon 自身被强杀之前。
+ */
+export const STOP_GRACE_MS = 8_000;
 
 /** 崩溃重启退避：翻倍递增、上限 60s；子进程存活超过 60s 说明不是崩溃循环，重置退避 */
 export function nextBackoffMs(prevMs: number, childUptimeMs: number): number {
@@ -187,8 +193,13 @@ export async function stopDaemon(): Promise<{ stopped: boolean }> {
     const orphanStamp = readPidStamp(BRIDGE_PID_FILE);
     if (orphanStamp && pidIsOurs(orphanStamp.pid, orphanStamp.startTime)) {
       const orphan = orphanStamp.pid;
-      killProcessTree(orphan, true, orphanStamp.startTime);
-      await delay(100);
+      // supervisor 已不在的遗留桥接同样先温和停止：它仍在处理消息与写状态文件
+      killProcessTree(orphan, process.platform === "win32", orphanStamp.startTime);
+      const orphanDeadline = Date.now() + STOP_GRACE_MS;
+      while (Date.now() < orphanDeadline && isPidAlive(orphan)) await delay(100);
+      if (isPidAlive(orphan)) killProcessTree(orphan, true, orphanStamp.startTime);
+      const finalDeadline = Date.now() + 5_000;
+      while (Date.now() < finalDeadline && isPidAlive(orphan)) await delay(100);
       if (isPidAlive(orphan)) throw new Error(`桥接进程 ${orphan} 未能停止，保留 PID 文件`);
       cleanupStalePids();
       return { stopped: true };
@@ -198,7 +209,7 @@ export async function stopDaemon(): Promise<{ stopped: boolean }> {
   }
   const supervisorStamp = readPidStamp(SUPERVISOR_PID_FILE);
   killProcessTree(st.supervisorPid!, process.platform === "win32", supervisorStamp?.startTime);
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + STOP_GRACE_MS;
   while (Date.now() < deadline && isPidAlive(st.supervisorPid!)) await delay(100);
   if (isPidAlive(st.supervisorPid!)) killProcessTree(st.supervisorPid!, true, supervisorStamp?.startTime);
   const finalDeadline = Date.now() + 5_000;

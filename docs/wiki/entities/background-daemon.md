@@ -3,7 +3,7 @@ title: 后台守护进程
 type: entity
 tags: [后台, 进程, 可靠性]
 created: 2026-09-30
-updated: 2026-10-01
+updated: 2026-11-09
 status: active
 ---
 
@@ -13,8 +13,8 @@ status: active
 
 ## 关键文件与接口
 
-- src/daemon/daemon.ts：异步启动和停止，释放日志描述符，停止失败保留 PID 文件并抛错。
-- src/daemon/supervisor.ts：独占 PID 锁，运行期间检测停止请求并结束子进程；退出释放监听器、锁和 PID。
+- src/daemon/daemon.ts：异步启动和停止，释放日志描述符；停止先发 SIGTERM，宽限期（STOP_GRACE_MS 8 秒）后仍未退出才强杀，失败保留 PID 文件并抛错。supervisor 已不在的遗留桥接进程同样先温和停止。
+- src/daemon/supervisor.ts：独占 PID 锁，运行期间检测停止请求；POSIX 上先向子进程发 SIGTERM，等待 stopGraceMs（默认 6 秒，短于 daemon 宽限）后强杀；Windows 仍用 taskkill 结束进程树。退出释放监听器、锁和 PID。
 - src/daemon/process-lock.ts：独占写入进程锁，回收残留锁时重新检查存活进程；损坏锁明确报错。
 - src/index.ts：桥接实例独占锁，从初始化到退出统一释放；微信上下文按账号分别保存。
 - src/cli.ts：等待启动、停止和重启结果；更新依赖失败不继续宣称更新成功。
@@ -24,6 +24,8 @@ status: active
 Node 标准库和 Windows taskkill 或 POSIX 信号。测试只操作临时目录中的自有子进程，不变更用户实际自启任务。
 
 ## 重要变更记录
+
+2026-11-09：停止请求原先在 supervisor 内直接 SIGKILL 桥接子进程，途经的中断通知、模型请求终止和实例锁释放全部被跳过，与 daemon 自身 5 秒 SIGTERM 等待矛盾。改为 supervisor 先发 SIGTERM 并在宽限期后强杀；daemon 对 supervisor 与遗留桥接的等待统一为 8 秒。验证：typecheck、build 通过，177 项测试通过、7 项按平台跳过；新增真实子进程优雅退出、宽限期升级强杀与遗留桥接停止测试（Windows 不投递 SIGTERM 给 JS 处理器，相关用例仅在 POSIX 运行）。见 [优雅停止与可中断登录](../queries/graceful-shutdown-login-abort.md)。
 
 检查发现同步启动等待阻塞事件分发、supervisor 停止请求没有主动结束长运行子进程、PID 检查后写入存在竞态、日志文件描述符未关闭。真实子进程验证了运行期间停止、崩溃退避和重复实例拒绝；后台状态区分初始化、等待登录和消息循环已启动。
 

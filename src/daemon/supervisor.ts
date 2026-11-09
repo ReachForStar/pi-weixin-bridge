@@ -24,6 +24,7 @@ import {
   readPidOrNull,
   killProcessTree,
   LOG_ROTATE_BYTES,
+  STOP_GRACE_MS,
 } from "./daemon.js";
 import { acquireProcessLock } from "./process-lock.js";
 import { writePidFiles } from "./pid-identity.js";
@@ -38,6 +39,8 @@ export interface SupervisorOptions {
   /** PID/日志目录（默认 ~/.pi-weixin-bridge/daemon）；测试注入临时目录 */
   daemonDir?: string;
   baseBackoffMs?: number;
+  /** 停止请求后等待子进程退出的宽限期（毫秒）；超时强杀。默认 6 秒，短于 daemon 自身的停止宽限 */
+  stopGraceMs?: number;
   /** 停止判定（默认 SIGINT/SIGTERM 触发）；测试可注入手动标志 */
   shouldStop?: () => boolean;
   /** 子进程退出回调（测试观测用） */
@@ -51,6 +54,8 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
   const bridgeLog = join(daemonDir, "bridge.log");
   const childArgs = opts.childArgs ?? [BIN_PATH, "start"];
   const baseBackoffMs = opts.baseBackoffMs ?? BASE_BACKOFF_MS;
+  // 必须短于 daemon stop 的宽限：否则 daemon 先升级强杀 supervisor，子进程收尾尚未完成
+  const stopGraceMs = opts.stopGraceMs ?? Math.max(1_000, STOP_GRACE_MS - 2_000);
 
   mkdirSync(daemonDir, { recursive: true });
 
@@ -96,13 +101,28 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
 
     const code = await new Promise<number | null>((resolve) => {
       let requested = false;
+      let forceTimer: NodeJS.Timeout | undefined;
       const timer = setInterval(() => {
         if (!shouldStop() || requested || !child.pid) return;
         requested = true;
-        try { killProcessTree(child.pid); }
+        // 先温和停止：桥接收到 SIGTERM 后要中断模型请求、发送中断通知并释放实例锁。
+        // 立即强杀会跳过这些收尾，用户只能看到连接中断。
+        try { killProcessTree(child.pid, process.platform === "win32"); }
         catch (error) { logger.error(`[supervisor] 停止子进程失败：${String(error)}`); }
+        if (process.platform === "win32") return;
+        logger.info(`[supervisor] 已请求桥接退出，最多等待 ${stopGraceMs >= 1000 ? `${Math.round(stopGraceMs / 1000)} 秒` : `${stopGraceMs} 毫秒`}`);
+        forceTimer = setTimeout(() => {
+          if (child.exitCode !== null || child.signalCode !== null) return;
+          logger.warn("[supervisor] 桥接未在宽限期内退出，强制结束");
+          try { killProcessTree(child.pid!, true); }
+          catch (error) { logger.error(`[supervisor] 强制停止子进程失败：${String(error)}`); }
+        }, stopGraceMs);
       }, 100);
-      const finish = (value: number | null) => { clearInterval(timer); resolve(value); };
+      const finish = (value: number | null) => {
+        clearInterval(timer);
+        if (forceTimer) clearTimeout(forceTimer);
+        resolve(value);
+      };
       child.on("error", (error) => { logger.error(`[supervisor] 子进程启动失败：${error.message}`); finish(null); });
       child.on("exit", (c) => finish(c));
     });

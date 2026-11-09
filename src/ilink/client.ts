@@ -122,11 +122,14 @@ export class IlinkClient {
     return text;
   }
 
-  /** GET 通用封装（仅公共头） */
-  private async get(endpoint: string, timeoutMs: number, baseUrl = this.baseUrl): Promise<string> {
+  /** GET 通用封装（仅公共头）；signal 用于退出时中断长轮询（如扫码状态） */
+  private async get(endpoint: string, timeoutMs: number, baseUrl = this.baseUrl, signal?: AbortSignal): Promise<string> {
     const url = new URL(endpoint, ensureTrailingSlash(baseUrl));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    if (signal?.aborted) controller.abort();
+    else signal?.addEventListener("abort", onExternalAbort, { once: true });
     let res: Response;
     let text: string;
     try {
@@ -141,30 +144,34 @@ export class IlinkClient {
       throw classifyFetchError(err);
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onExternalAbort);
     }
     if (!res.ok) throw httpError(`GET ${endpoint}`, res.status, text);
     return text;
   }
 
   /** 获取登录二维码（始终用固定域名，无需 token） */
-  async fetchQRCode(localTokenList: string[] = []): Promise<QRCodeResponse> {
+  async fetchQRCode(localTokenList: string[] = [], signal?: AbortSignal): Promise<QRCodeResponse> {
     const raw = await this.post(
       `ilink/bot/get_bot_qrcode?bot_type=${encodeURIComponent(CONFIG.botType)}`,
       { local_token_list: localTokenList },
       CONFIG.apiTimeoutMs,
       CONFIG.fixedBaseUrl,
+      signal,
     );
     return JSON.parse(raw) as QRCodeResponse;
   }
 
   /** 长轮询扫码状态（GET，客户端超时视为 wait 继续轮询） */
-  async pollQRStatus(qrcode: string, baseUrl = this.baseUrl, verifyCode?: string): Promise<QRStatusResponse> {
+  async pollQRStatus(qrcode: string, baseUrl = this.baseUrl, verifyCode?: string, signal?: AbortSignal): Promise<QRStatusResponse> {
     try {
       let endpoint = `ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`;
       if (verifyCode) endpoint += `&verify_code=${encodeURIComponent(verifyCode)}`;
-      const raw = await this.get(endpoint, CONFIG.qrPollTimeoutMs, baseUrl);
+      const raw = await this.get(endpoint, CONFIG.qrPollTimeoutMs, baseUrl, signal);
       return JSON.parse(raw) as QRStatusResponse;
     } catch (err) {
+      // 退出信号必须向上传递：否则停止服务后仍会等满 35 秒轮询
+      signal?.throwIfAborted();
       // 客户端超时或网关错误均视为等待，继续轮询
       if (err instanceof Error && err.name === "AbortError") return { status: "wait" };
       return { status: "wait" };

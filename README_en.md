@@ -91,6 +91,8 @@ pi-weixin-bridge daemon stop      # stop
 
 The built-in daemon has zero third-party dependencies, and PID/logs live in `~/.pi-weixin-bridge/daemon/` (restart and boot require the npm package and Node paths to exist), cross-platform (Windows/POSIX).
 
+`daemon stop` sends SIGTERM first, so the bridge can abort the running model request, notify the chat and release the instance lock; it force-kills only after the grace period (6 s for the child, 8 s for the supervisor). In foreground mode the first Ctrl+C shuts down gracefully and a second one exits immediately.
+
 > **Previously running under PM2?** PM2 configuration is no longer shipped as of 1.6.0. First stop the old process with `pm2 stop pi-weixin-bridge` (to avoid two instances polling the same account), then start with `pi-weixin-bridge daemon start`.
 
 **Session expiry (errcode -14) and re-scanning**: a background process cannot scan interactively, so the log will tell you to:

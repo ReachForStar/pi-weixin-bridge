@@ -242,3 +242,7 @@ PR #3（fork）把 pi-coding-agent 0.82.0 升到 1.4.0，冲突只在 `package-l
 ## [2026-10-26] release | 1.7.2 Release 正文补 PR 引用
 
 用户要求 Release 正文引用对应 PR。把引用写进 CHANGELOG 的 1.7.2 版本段首行（`Release` 正文由 `extract-changelog.mjs` 提取，两处同源），随后用 `gh api -X PATCH /releases/423908267` 更新已发布的 v1.7.2 正文（gh 2.4.0 无 `release edit`），读回正文与脚本输出比对一致。见 [1.7.2 发布记录](queries/release-1-7-2.md)。
+
+## [2026-11-09] fix | 优雅停止与可中断登录
+
+`daemon stop` 时 supervisor 直接强杀桥接子进程，跳过中断通知、模型请求终止与实例锁释放；扫码登录链路不接收退出信号，Ctrl+C 后仍要等满 35 秒轮询或人工输入。改为 supervisor 先发 SIGTERM、6 秒宽限后强杀，daemon 对 supervisor 与遗留桥接统一等待 8 秒；登录的 GET、状态轮询、二维码刷新、配对码输入与轮询间隔都响应 signal；主进程首次退出启动 30 秒看门狗，第二次信号立即退出。新增真实子进程优雅/强杀/遗留桥接测试与真实连接扫码中断测试。typecheck、build 通过，177 项测试通过、7 项按平台跳过。见 [优雅停止与可中断登录](queries/graceful-shutdown-login-abort.md)。

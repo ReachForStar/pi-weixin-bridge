@@ -410,7 +410,7 @@ npm run build       # 构建到 dist/
 
 CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22 × ubuntu / windows / macos）。推送到 `main` 后比较推送前后的 `package.json` 版本号，仅版本变化且检查通过时发布 npm 并创建 GitHub Release；版本不变和 PR 均不发布。发布前由维护者确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。npm 已发布的版本跳过上传，仍可补建缺失的 Release。
 
-后台 `status` 区分初始化、等待扫码、消息循环已启动与重启中。前台和后台桥接共享独占实例锁，重复启动拒绝；PID 文件损坏时明确报错。停止等待子进程结束，失败保留 PID 信息。Windows 自启直接使用绝对 Node 路径，启动器等待结果并传播退出码；Linux unit 保存自定义路径并配置 ExecStop。实际系统注册需要在使用机器上执行。
+后台 `status` 区分初始化、等待扫码、消息循环已启动与重启中。前台和后台桥接共享独占实例锁，重复启动拒绝；PID 文件损坏时明确报错。停止先发 SIGTERM 让桥接中断模型请求、发送中断通知并释放锁，宽限期后仍未退出才强杀；失败保留 PID 信息。前台运行与登录过程中首次 Ctrl+C 为优雅停止，再次 Ctrl+C 立即退出。Windows 自启直接使用绝对 Node 路径，启动器等待结果并传播退出码；Linux unit 保存自定义路径并配置 ExecStop。实际系统注册需要在使用机器上执行。
 
 ## 故障排查
 

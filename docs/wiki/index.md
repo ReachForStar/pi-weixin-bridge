@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-10-26
+updated: 2026-11-09
 ---
 
 # Wiki 索引
@@ -10,11 +10,11 @@ updated: 2026-10-26
 
 ## 实体 entities
 
-- [桥接运行可靠性](entities/bridge-reliability.md) — 退出等待、请求超时与文本分块边界。
+- [桥接运行可靠性](entities/bridge-reliability.md) — 退出等待、请求超时、扫码中断与文本分块边界。
 - [对话恢复与任务通知](entities/conversation-recovery.md) — 持久会话、全流程串行、任务查询与精确取消、进度及失败通知。
 - [入站文档自动转换](entities/inbound-documents.md) — 附件保存、文档转换和失败通知。
 - [anydoc 依赖](entities/anydoc.md) — 固定版本、格式识别与禁止自动云端 OCR。
-- [后台守护进程](entities/background-daemon.md) — 后台启动、独占锁、等待扫码与真实子进程停止验证。
+- [后台守护进程](entities/background-daemon.md) — 后台启动、独占锁、等待扫码与先温和后强杀的停止流程。
 - [微信功能服务与权限](entities/feature-services.md) — 十项功能、模型选择、执行权限与验证边界。
 - [供应方读取与会话模型配置](entities/model-configuration.md) — 扫码后默认模型选择、会话独立切换与 CLI 帮助。
 
@@ -56,3 +56,4 @@ updated: 2026-10-26
 - [npm-token-check 无法创建提醒 issue 与令牌轮换](queries/npm-token-check-issue-permission.md) — 空权限导致 403，换令牌需同步 TOKEN_EXPIRES。
 - [SDK 会话不触发 session_start](queries/sdk-session-start-hooks.md) — 桥接需补调 bindExtensions，否则订阅该事件的 hook 全不生效。
 - [合并 PR #3：pi 核心升级到 1.4.0](queries/pr-3-pi-core-upgrade.md) — 锁文件源主机冲突、保留与排除的改动、验证边界。
+- [优雅停止与可中断登录](queries/graceful-shutdown-login-abort.md) — supervisor 先 SIGTERM 后强杀、扫码登录响应退出信号与二次信号兜底。
