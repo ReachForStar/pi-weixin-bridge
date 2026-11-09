@@ -38,7 +38,7 @@ function darwinStartTime(pid: number): string | undefined {
     // 必须固定 locale，否则 supervisor 环境与交互式 shell 采集结果不同会误判 mismatch。
     const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
       encoding: "utf8", timeout: 5_000, windowsHide: true,
-      env: { ...process.env, LC_ALL: "C", LANG: "C" },
+      env: { ...process.env, LC_ALL: "C", LANG: "C", TZ: "UTC" },
     }).trim();
     return out || undefined;
   } catch {

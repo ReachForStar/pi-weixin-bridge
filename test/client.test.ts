@@ -76,6 +76,28 @@ describe("IlinkClient 请求构造", () => {
     expect(body.base_info).toBeDefined();
   });
 
+  it("扫码轮询遇到非超时错误向上抛出", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => "<html>gateway error</html>",
+      headers: new Headers(),
+    }));
+    const client = new IlinkClient("https://ilinkai.weixin.qq.com");
+    await expect(client.pollQRStatus("qr", "https://ilinkai.weixin.qq.com"))
+      .rejects.toThrow("返回非法 JSON");
+  });
+
+  it("getConfig / sendTyping / getUploadUrl 检查业务返回码", async () => {
+    vi.stubGlobal("fetch", mockFetch({ ret: -1, errmsg: "bad request" }));
+    const client = new IlinkClient("https://ilinkai.weixin.qq.com", "token");
+    await expect(client.getConfig("user")).rejects.toThrow("getConfig ret=-1");
+    await expect(client.sendTyping({ ilink_user_id: "user", typing_ticket: "t", status: 1 }))
+      .rejects.toThrow("sendTyping ret=-1");
+    await expect(client.getUploadUrl({ filekey: "fk", media_type: 1, rawsize: 1 }))
+      .rejects.toThrow("getUploadUrl ret=-1");
+  });
+
   it("sendMessage：ret 非 0 抛错", async () => {
     const fetchMock = mockFetch({ ret: -1, errmsg: "send failed" });
     vi.stubGlobal("fetch", fetchMock);

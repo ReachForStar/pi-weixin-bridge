@@ -63,6 +63,22 @@ function httpError(endpoint: string, status: number, body: string): AuthError | 
   return new ProtocolError(`${endpoint} HTTP ${status}: ${snippet}`, undefined, status);
 }
 
+/** 服务端返回非 JSON（错误页、截断正文）时包装为协议错误，保留端点便于定位 */
+function parseJson<T>(endpoint: string, raw: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (error) {
+    throw new ProtocolError(`${endpoint} 返回非法 JSON：${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** 统一检查业务返回码；-14 表示会话超时，交由上层重新登录 */
+function ensureRet(endpoint: string, resp: { ret?: number; errmsg?: string }): void {
+  if (!resp.ret) return;
+  if (resp.ret === -14) throw new SessionTimeoutError();
+  throw new ProtocolError(`${endpoint} ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`, resp.ret);
+}
+
 export class IlinkClient {
   private baseUrl: string;
   private token?: string;
@@ -159,7 +175,7 @@ export class IlinkClient {
       CONFIG.fixedBaseUrl,
       signal,
     );
-    return JSON.parse(raw) as QRCodeResponse;
+    return parseJson<QRCodeResponse>("get_bot_qrcode", raw);
   }
 
   /** 长轮询扫码状态（GET，客户端超时视为 wait 继续轮询） */
@@ -168,13 +184,14 @@ export class IlinkClient {
       let endpoint = `ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`;
       if (verifyCode) endpoint += `&verify_code=${encodeURIComponent(verifyCode)}`;
       const raw = await this.get(endpoint, CONFIG.qrPollTimeoutMs, baseUrl, signal);
-      return JSON.parse(raw) as QRStatusResponse;
+      return parseJson<QRStatusResponse>("get_qrcode_status", raw);
     } catch (err) {
       // 退出信号必须向上传递：否则停止服务后仍会等满 35 秒轮询
       signal?.throwIfAborted();
-      // 客户端超时或网关错误均视为等待，继续轮询
+      // 只有客户端自身超时视为「继续等待」；鉴权/网络/协议错误必须抛出，
+      // 否则登录循环会掩盖真实故障并一直重试到总超时。
       if (err instanceof Error && err.name === "AbortError") return { status: "wait" };
-      return { status: "wait" };
+      throw err;
     }
   }
 
@@ -188,7 +205,7 @@ export class IlinkClient {
         this.baseUrl,
         signal,
       );
-      return JSON.parse(raw) as GetUpdatesResp;
+      return parseJson<GetUpdatesResp>("getupdates", raw);
     } catch (err) {
       // 长轮询客户端超时属正常控制流，返回空响应由调用方重试
       if (err instanceof Error && err.name === "AbortError" && !signal?.aborted) {
@@ -205,11 +222,8 @@ export class IlinkClient {
       { msg, base_info: buildBaseInfo() },
       CONFIG.apiTimeoutMs,
     );
-    const resp = JSON.parse(raw) as SendMessageResp;
-    if (resp.ret && resp.ret !== 0) {
-      if (resp.ret === -14) throw new SessionTimeoutError();
-      throw new ProtocolError(`sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`, resp.ret);
-    }
+    const resp = parseJson<SendMessageResp>("sendmessage", raw);
+    ensureRet("sendMessage", resp);
   }
 
   /** 获取机器人配置（含 typing_ticket） */
@@ -219,12 +233,15 @@ export class IlinkClient {
       { ilink_user_id: ilinkUserId, context_token: contextToken, base_info: buildBaseInfo() },
       CONFIG.apiTimeoutMs,
     );
-    return JSON.parse(raw) as GetConfigResp;
+    const resp = parseJson<GetConfigResp>("getconfig", raw);
+    ensureRet("getConfig", resp);
+    return resp;
   }
 
   /** 发送“正在输入”状态 */
   async sendTyping(body: SendTypingReq): Promise<void> {
-    await this.post("ilink/bot/sendtyping", { ...body, base_info: buildBaseInfo() }, CONFIG.apiTimeoutMs);
+    const raw = await this.post("ilink/bot/sendtyping", { ...body, base_info: buildBaseInfo() }, CONFIG.apiTimeoutMs);
+    ensureRet("sendTyping", parseJson<{ ret?: number; errmsg?: string }>("sendTyping", raw));
   }
 
   /** 获取 CDN 上传预签名 URL */
@@ -236,6 +253,8 @@ export class IlinkClient {
       this.baseUrl,
       signal,
     );
-    return JSON.parse(raw) as GetUploadUrlResp;
+    const resp = parseJson<GetUploadUrlResp>("getuploadurl", raw);
+    ensureRet("getUploadUrl", resp);
+    return resp;
   }
 }

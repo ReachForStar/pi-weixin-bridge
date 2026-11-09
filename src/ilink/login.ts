@@ -22,6 +22,8 @@ function showQR(qrcodeUrl: string): void {
 async function readLine(prompt: string, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
   const { createInterface } = await import("node:readline/promises");
+  // 动态 import 期间可能已经收到退出信号；此时再注册监听不会触发任何事件
+  signal?.throwIfAborted();
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   // 退出信号到达时关闭 readline：挂起的 question 必须以 AbortError 结束，
   // 否则停止服务时仍会卡在等待输入上（Ctrl+C 看不到反应）。
@@ -72,7 +74,22 @@ export async function loginWithQR(client: IlinkClient, signal?: AbortSignal): Pr
         const prompt = pendingVerifyCode
           ? "❌ 数字不匹配，请重新输入微信显示的数字："
           : "请输入手机微信显示的数字以继续连接：";
-        pendingVerifyCode = await readLine(prompt, signal);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error("登录超时，请重试");
+        const timeout = AbortSignal.timeout(remaining);
+        let input: string;
+        try {
+          input = await readLine(prompt, signal ? AbortSignal.any([signal, timeout]) : timeout);
+        } catch (error) {
+          if ((error as Error)?.name === "TimeoutError") throw new Error("登录超时，请重试");
+          throw error;
+        }
+        if (!input) {
+          process.stdout.write("输入不能为空，请重新输入。\n");
+          pendingVerifyCode = undefined;
+          continue;
+        }
+        pendingVerifyCode = input;
         continue; // 立即带配对码进入下一次轮询
       }
 

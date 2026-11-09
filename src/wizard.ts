@@ -1,8 +1,9 @@
 // 安装向导：交互式选择状态目录与 pi 工作目录，校验可写性后持久化到 config.json。
 // 凭据与日志落在用户自选路径，因此写入前必须实际探针验证可写（而非仅 existsSync）。
 import { createInterface, type Interface } from "node:readline/promises";
-import { closeSync, existsSync, mkdirSync, openSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, existsSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import {
   BOOTSTRAP_DIR,
@@ -63,15 +64,17 @@ export interface WizardChoice {
 
 /** 实际写删探针文件验证目录可写 */
 function checkWritable(dir: string, mode = 0o700): string | null {
+  const probe = join(dir, `.write-test-${process.pid}-${randomUUID()}`);
   try {
     mkdirSync(dir, { recursive: true, mode });
-    const probe = join(dir, `.write-test-${process.pid}`);
-    const fd = openSync(probe, "w");
-    closeSync(fd);
-    rmSync(probe);
+    // wx：独占创建，路径已被符号链接占用时直接失败，避免跟随链接截断目标文件
+    writeFileSync(probe, "", { flag: "wx", mode: 0o600 });
     return null;
   } catch (err) {
     return String(err);
+  } finally {
+    // 父路径可能是普通文件（ENOTDIR）；清理失败不能覆盖可写性判断
+    try { rmSync(probe, { force: true }); } catch { /* 忽略 */ }
   }
 }
 
@@ -114,6 +117,15 @@ export async function runInstallWizard(
     logger.info(
       `[install] 使用默认路径（${opts.assumeYes ? "--yes" : "非交互模式"}）：状态目录 ${STATE_DIR}，工作目录 ${WORKSPACE}`,
     );
+  }
+
+  // 状态目录存放凭据；工作目录由 Agent 读写。相同或互相嵌套会让 Agent 直接访问凭据/日志
+  const resolvedState = resolve(stateDir);
+  const resolvedWorkspace = resolve(workspace);
+  const contains = (outer: string, inner: string) =>
+    inner === outer || inner.startsWith(`${outer}${sep}`);
+  if (contains(resolvedState, resolvedWorkspace) || contains(resolvedWorkspace, resolvedState)) {
+    throw new Error(`状态目录与 pi 工作目录不能相同或互相嵌套：${resolvedState} / ${resolvedWorkspace}`);
   }
 
   // 状态目录存放凭据，收紧为 0700；工作目录是 Agent 读写位置，保持默认权限

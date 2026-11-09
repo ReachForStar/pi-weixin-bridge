@@ -19,6 +19,10 @@ type ContextData = Record<string, ContextEntry>;
 
 export class ContextStore {
   private store = new Map<string, ContextEntry>();
+  private timer?: NodeJS.Timeout;
+  private dirty = false;
+  /** 高频消息合并写入的窗口：首条立即落盘，窗口内的后续变更合并一次 */
+  private readonly saveIntervalMs = 250;
 
   constructor(private readonly file: string) {
     this.load();
@@ -54,13 +58,41 @@ export class ContextStore {
     }
   }
 
+  /**
+   * 合并高频写入：每条入站消息都同步 fsync 会阻塞事件循环；首条立即保存保证重启可恢复，
+   * 之后的 250ms 窗口内只标记脏数据，由定时器合并写入。退出前调用 flush() 落盘。
+   */
+  private requestSave(): void {
+    if (this.timer) {
+      this.dirty = true;
+      return;
+    }
+    this.save();
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      if (!this.dirty) return;
+      this.dirty = false;
+      this.requestSave();
+    }, this.saveIntervalMs);
+    this.timer.unref();
+  }
+
+  /** 立即写入未落盘的变更（进程退出前调用） */
+  flush(): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = undefined;
+    if (!this.dirty) return;
+    this.dirty = false;
+    this.save();
+  }
+
   /** 记录/刷新用户的 context_token（来自入站消息） */
   setContextToken(userId: string, contextToken: string): void {
     const entry = this.store.get(userId) ?? { contextToken, updatedAt: Date.now() };
     entry.contextToken = contextToken;
     entry.updatedAt = Date.now();
     this.store.set(userId, entry);
-    this.save();
+    this.requestSave();
   }
 
   /** 获取用户最新的 context_token（用于回复或主动推送） */
@@ -74,7 +106,7 @@ export class ContextStore {
     entry.typingTicket = ticket;
     entry.ticketExpiresAt = Date.now() + ttlMs;
     this.store.set(userId, entry);
-    this.save();
+    this.requestSave();
   }
 
   /** 获取未过期的 typing ticket；过期则清除并返回 undefined（调用方应重新 getconfig） */

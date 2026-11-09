@@ -109,7 +109,17 @@ export async function runSupervisor(opts: SupervisorOptions = {}): Promise<void>
         // 立即强杀会跳过这些收尾，用户只能看到连接中断。
         try { killProcessTree(child.pid, process.platform === "win32"); }
         catch (error) { logger.error(`[supervisor] 停止子进程失败：${String(error)}`); }
-        if (process.platform === "win32") return;
+        if (process.platform === "win32") {
+          // Windows 没有可投递的 SIGTERM：taskkill 失败时继续重试，直到子进程退出或进程被外部停止
+          forceTimer = setTimeout(function retry() {
+            if (child.exitCode !== null || child.signalCode !== null) return;
+            logger.warn("[supervisor] 桥接未在宽限期内退出，重试强制结束");
+            try { killProcessTree(child.pid!, true); }
+            catch (error) { logger.error(`[supervisor] 强制停止子进程失败：${String(error)}`); }
+            forceTimer = setTimeout(retry, 2_000);
+          }, stopGraceMs);
+          return;
+        }
         logger.info(`[supervisor] 已请求桥接退出，最多等待 ${stopGraceMs >= 1000 ? `${Math.round(stopGraceMs / 1000)} 秒` : `${stopGraceMs} 毫秒`}`);
         forceTimer = setTimeout(() => {
           if (child.exitCode !== null || child.signalCode !== null) return;

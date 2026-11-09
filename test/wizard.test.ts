@@ -52,6 +52,15 @@ describe("runInstallWizard", () => {
     expect((await import("../src/config.js")).WORKSPACE).toBe(choice.workspace);
   });
 
+  it("状态目录与工作目录重叠时拒绝安装", async () => {
+    const shared = join(home, "shared");
+    vi.stubEnv("PI_WEIXIN_STATE_DIR", shared);
+    vi.stubEnv("PI_WEIXIN_WORKSPACE", shared);
+    vi.resetModules();
+    const { runInstallWizard } = await import("../src/wizard.js");
+    await expect(runInstallWizard({ assumeYes: true })).rejects.toThrow("不能相同或互相嵌套");
+  });
+
   it("交互：自定义路径写入 config.json 且 fromDefaults=false", async () => {
     const { runInstallWizard } = await import("../src/wizard.js");
     const customState = join(home, "my-state");

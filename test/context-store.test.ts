@@ -28,6 +28,15 @@ describe("ContextStore 持久化", () => {
     expect(store2.getContextToken("user-1")).toBe("ctx-token-1");
   });
 
+  it("context_token 高频更新合并写入，flush 落盘最新值", () => {
+    const store = new ContextStore(file);
+    store.setContextToken("user-1", "first");
+    store.setContextToken("user-1", "second");
+    store.setContextToken("user-1", "third");
+    store.flush();
+    expect(new ContextStore(file).getContextToken("user-1")).toBe("third");
+  });
+
   it("typing ticket 未过期可取", () => {
     const store = new ContextStore(file);
     store.setTypingTicket("user-1", "ticket-1", 60_000);
