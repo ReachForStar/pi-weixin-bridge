@@ -258,3 +258,7 @@ PR #3（fork）把 pi-coding-agent 0.82.0 升到 1.4.0，冲突只在 `package-l
 ## [2026-11-27] chore | 升级 pi 核心到 1.6.1
 
 `@earendil-works/pi-coding-agent` 由 1.4.0 升到 npm 最新 1.6.1，锁文件重新生成（248 条 `resolved` 全为 `registry.npmjs.org`）。四条 Breaking Changes（pi-schema 工具参数校验、grep readFile 上下文回调、扩展 `render()` 只读返回值、SettingsManager 通知 API）桥接均未触及：自定义工具只用纯 JSON Schema，扩展工厂只注册 `tool_call`。新增接入 `ModelRuntime.settleCredentialWrites()`：`PiSessionManager.settleCredentialWrites()` 在退出 finally 中先于 `dispose()` 调用，等待后台刷新轮换的 OAuth 令牌落盘，写失败只记警告。`bindExtensions({})` 补调实测仍需保留（未绑定 `session_start` 计数 0，绑定后 1）。SDK 依赖链 undici 8.10.2 → 8.12.4，README 审计已知问题解除。验证：typecheck、build 通过，187 项测试通过、7 项按平台跳过；真实 `src/index.ts` 后台启动后 SIGTERM 按「收到退出信号 → 已退出」结束。见 [升级 pi 核心到 1.6.1](queries/pi-core-1-6-1-upgrade.md)。
+
+## [2026-11-27] release | 发布 1.7.6
+
+版本号 1.7.5 → 1.7.6，内容为 pi 核心 1.6.1 升级与退出前等待 SDK 凭据写入。提交 `3374339` 推送 main 触发发布，CI 45974907920 三平台 check 与 publish 全部成功；registry `latest`/`version` 均为 1.7.6，tarball 核对版本与依赖 `@earendil-works/pi-coding-agent=1.6.1`；Release v1.7.6 非草稿、非预发布，指向 `3374339`，正文由 CHANGELOG 提取（Changed + Fixed）。顺带补完此前未完成的审计复核：生产链 `npm audit --omit=dev` 为 0 项，完整审计 7 项全部在开发依赖（vitest 3.2.7 链需升 vitest 5，vite/postcss 链与 fast-xml-parser 有非破坏性修复）。见 [1.7.6 发布记录](queries/release-1-7-6.md)。

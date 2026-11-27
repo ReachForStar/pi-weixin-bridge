@@ -41,7 +41,7 @@ status: active
 
 - 1.5.1 起 `cacheWarming` 默认由 `streaming` 改为 `idle`：会话结束后的空档期最多 30 分钟内仍可能按成本判断后台刷新缓存。桥接沿用用户 `~/.pi/agent/settings.json`，不覆盖该设置。
 - `enabledModels` 等配置警告由 SDK 写入 stderr，进入桥接日志，不影响会话。
-- `npm audit` 因 registry 审计接口 ECONNRESET 未能实际运行；`undici` 已是 8.12.4（高于修复线 8.12.2），待网络恢复后复核。
+- `npm audit` 已实际运行：`npm audit --omit=dev` 为 0 项，生产链 `undici@8.12.4` 高于修复线；完整 `npm audit` 为 7 项（1 low、1 moderate、3 high、2 critical），全部在开发依赖：`vitest@3.2.7` 链（`tinypool`、`@vitest/mocker`，修复需升 vitest 5）、`vite@7.3.6` 与 `postcss` 链（`nanoid`、`source-map-js`）、测试用 `fast-xml-parser@5.11.2`。这些包不进入发布产物，本次未夹带测试工具链升级，见[1.7.6 发布记录](release-1-7-6.md)。
 
 ## 涉及模块
 

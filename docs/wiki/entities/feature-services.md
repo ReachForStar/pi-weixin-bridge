@@ -28,7 +28,7 @@ status: active
 
 用户明确允许安装 cron-parser 5.10.1 和 minisearch 7.2.0，固定版本已安装，复用 anydoc 0.2.4 和 pi SDK 1.6.1。索引不上传文件；OCR 上传必须每文件确认。
 
-安装后 npm audit 曾报 6 项已存在依赖链告警（3 moderate、3 high），其中 undici 告警随 pi SDK 升到 1.6.1（undici 8.12.4）解除，其余 Vitest 相关告警仍存在；升级 SDK 时未改业务依赖。
+安装后 `npm audit` 曾报 6 项已存在依赖链告警（3 moderate、3 high）。升级 pi SDK 到 1.6.1 后复核：生产链 `npm audit --omit=dev` 为 0 项（undici 8.12.4 高于修复线）；完整审计为 7 项（1 low、1 moderate、3 high、2 critical），全部在开发依赖（`vitest@3.2.7` 链、`vite@7.3.6` 与 `postcss` 链、测试用 `fast-xml-parser@5.11.2`）。生产包不包含这些依赖，测试工具链升级（vitest 5）属单独决策，见[1.7.6 发布记录](../queries/release-1-7-6.md)。
 
 ## 重要变更记录
 

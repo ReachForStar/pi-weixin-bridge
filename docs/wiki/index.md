@@ -60,3 +60,4 @@ updated: 2026-11-27
 - [全库审查问题修复](queries/full-repo-review-fixes.md) — 332 条审查意见的确认项、误报核对与状态/配置/调度/会话修复。
 - [1.7.5 发布记录](queries/release-1-7-5.md) — 审查修复补丁版发版、CI 三平台与 npm 实际结果。
 - [升级 pi 核心到 1.6.1](queries/pi-core-1-6-1-upgrade.md) — 破坏性变更核对、凭据写入收尾、session_start 实测与 undici 告警解除。
+- [1.7.6 发布记录](queries/release-1-7-6.md) — pi 核心 1.6.1 升级发版、生产链审计 0 项与开发依赖遗留告警。
