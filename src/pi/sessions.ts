@@ -510,6 +510,11 @@ export class PiSessionManager {
     return latest.trim();
   }
 
+  /** 退出前等待 SDK 凭据写入完成：后台刷新轮换的 OAuth 令牌未落盘会丢失 */
+  async settleCredentialWrites(): Promise<void> {
+    await this.modelRuntime?.settleCredentialWrites();
+  }
+
   dispose(): void {
     for (const session of this.sessions.values()) {
       try {

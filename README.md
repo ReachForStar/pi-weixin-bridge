@@ -406,7 +406,7 @@ npm test            # 单元测试（vitest；pretest 自动清理测试残留�
 npm run build       # 构建到 dist/
 ```
 
-依赖说明：`tsx` 为运行时依赖（npm bin 入口经它直接运行 TS 源码，无需构建）；`fast-xml-parser` 仅测试使用，位于 devDependencies。**已知问题**：生产依赖链含 `undici@8.10.2`（经 `pi-coding-agent` → `openai`，修复版 8.12.2 被 SDK 锁版，`npm audit` 报 high 但无法在本仓库修复），需上游发版。
+依赖说明：`tsx` 为运行时依赖（npm bin 入口经它直接运行 TS 源码，无需构建）；`fast-xml-parser` 仅测试使用，位于 devDependencies。pi-coding-agent 1.6.1 的依赖链使用 `undici@8.12.4`，此前记录的 `undici@8.10.2` 审计问题已解除。
 
 CI：GitHub Actions 在 push / PR 时自动跑 typecheck + test + build（Node 22 × ubuntu / windows / macos）。推送到 `main` 后比较推送前后的 `package.json` 版本号，仅版本变化且检查通过时发布 npm 并创建 GitHub Release；版本不变和 PR 均不发布。发布前由维护者确认版本号、CHANGELOG 和验证结果，再修改版本并推送；CI 不另设审批步骤。npm 已发布的版本跳过上传，仍可补建缺失的 Release。
 

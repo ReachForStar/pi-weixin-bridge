@@ -320,7 +320,7 @@ npm test            # unit tests (vitest; pretest cleans leftover test temp dirs
 npm run build       # build to dist/
 ```
 
-Dependency notes: `tsx` is a runtime dependency (the npm bin entry runs TS sources directly through it, no build step); `fast-xml-parser` is test-only and lives in devDependencies. **Known issue**: the production dependency chain pins `undici@8.10.2` (via `pi-coding-agent` → `openai`; the fixed 8.12.2 is locked out by the SDK), so `npm audit` reports high — fixable only upstream.
+Dependency notes: `tsx` is a runtime dependency (the npm bin entry runs TS sources directly through it, no build step); `fast-xml-parser` is test-only and lives in devDependencies. pi-coding-agent 1.6.1 brings `undici@8.12.4`, so the previously recorded `undici@8.10.2` audit finding is resolved.
 
 CI runs typecheck + tests + build on push / PR (Node 22 across ubuntu / windows / macos). A push to `main` publishes to npm and creates a GitHub Release only when the `package.json` version changes and all checks pass; PRs and version-unchanged pushes never publish. The maintainer confirms the version, CHANGELOG and verification results before pushing. Already-published npm versions are skipped, missing Releases can be backfilled.
 

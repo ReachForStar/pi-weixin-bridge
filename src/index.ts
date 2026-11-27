@@ -113,6 +113,8 @@ async function main(): Promise<void> {
     }
   } finally {
     controller.abort();
+    // SDK 后台刷新可能正在轮换 OAuth 令牌，退出前等写入落盘，避免下次启动鉴权失效
+    await pi.settleCredentialWrites().catch((error) => logger.warn(`[main] 凭据写入未完成：${String(error)}`));
     pi.dispose();
     process.removeListener("SIGINT", shutdown);
     process.removeListener("SIGTERM", shutdown);
