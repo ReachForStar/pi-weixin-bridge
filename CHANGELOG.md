@@ -4,11 +4,16 @@
 
 ## [Unreleased]
 
+## [1.7.6] - 2026-11-27
+
 ### Changed
 
-- 升级 `@earendil-works/pi-coding-agent` 到 1.6.1：工具参数改由 pi-schema 校验、find 工具路径模式改为相对搜索目录、OpenAI 兼容模型不再发送空 `tools` 数组；桥接代码无需改动，`createAgentSession` 仍未自动触发 `session_start`，`bindExtensions({})` 补调保留。
-- 依赖链 `undici` 升到 8.12.4，此前被 SDK 锁在 8.10.2 的审计问题解除。
-- 退出前等待 SDK 凭据写入完成，后台刷新轮换的 OAuth 令牌不会因进程退出丢失。
+- 升级 pi 核心 `@earendil-works/pi-coding-agent` 1.4.0 → 1.6.1：继承上游更严格的工具参数校验、find 工具路径按搜索目录解析、OpenAI 兼容供应方不再发送空 `tools` 数组、Anthropic 消息线程与更完整的自动重试。桥接侧接口无改动，只新增退出时的凭据写入等待。
+- 生产依赖链 `undici` 由 8.10.2 升到 8.12.4，README 记录的审计已知问题解除；`npm audit --omit=dev` 报告 0 项。
+
+### Fixed
+
+- 退出前等 pi SDK 把后台刷新轮换的 OAuth 令牌写入磁盘，再释放会话与实例锁；写入失败只记警告，不影响停止流程。避免重启后鉴权失效。
 
 ## [1.7.5] - 2026-11-09
 
