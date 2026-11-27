@@ -3,7 +3,7 @@ title: 微信功能服务与权限
 type: entity
 tags: [文件, 会话, 权限, 自动化, 模型]
 created: 2026-09-30
-updated: 2026-11-09
+updated: 2026-11-27
 status: active
 ---
 
@@ -26,9 +26,9 @@ status: active
 
 ## 上下游依赖
 
-用户明确允许安装 cron-parser 5.10.1 和 minisearch 7.2.0，固定版本已安装，复用 anydoc 0.2.4 和 pi SDK 1.4.0。索引不上传文件；OCR 上传必须每文件确认。
+用户明确允许安装 cron-parser 5.10.1 和 minisearch 7.2.0，固定版本已安装，复用 anydoc 0.2.4 和 pi SDK 1.6.1。索引不上传文件；OCR 上传必须每文件确认。
 
-安装后 npm audit 报告 6 项已存在依赖链告警（3 moderate、3 high），涉及 pi SDK、undici 和 Vitest 相关依赖，未自动升级不兼容版本；精确升级方案待核验。
+安装后 npm audit 曾报 6 项已存在依赖链告警（3 moderate、3 high），其中 undici 告警随 pi SDK 升到 1.6.1（undici 8.12.4）解除，其余 Vitest 相关告警仍存在；升级 SDK 时未改业务依赖。
 
 ## 重要变更记录
 

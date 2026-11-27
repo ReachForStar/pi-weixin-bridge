@@ -3,7 +3,7 @@ title: SDK 会话不触发 session_start 导致用户 hooks 不生效
 type: query
 tags: [pi-sdk, extensions, hooks, 桥接]
 created: 2026-10-26
-updated: 2026-10-26
+updated: 2026-11-27
 sources: []
 status: active
 ---
@@ -55,6 +55,9 @@ await created.bindExtensions({});
   safe-guard 计数（当前无实际危害，但语义错误）。2026-10-26 升到 1.4.0 后复核：
   `sdk.js` 仍无 `bindExtensions` 调用，`session_start` 只在 `agent-session.js` 的
   `bindExtensions` 与 `reload` 中 emit，补调必须保留，见[合并 PR #3](pr-3-pi-core-upgrade.md)。
+  2026-11-27 升到 1.6.1 后同方式实测：未绑定时 `session_start` 计数 0，`bindExtensions({})`
+  后为 1（reason `startup`），`sdk.js` 仍无 `bindExtensions` 调用，补调保留，
+  见[升级 pi 核心到 1.6.1](pi-core-1-6-1-upgrade.md)。
 - 升级后按注入结果核对：会话结束后导出 jsonl，检查是否出现
   `customType` 为 `wiki-memory`、`tmp-guard` 的注入消息。task-flow 对短 prompt
   不注入属其正常门控（非任务句式且正文过短时跳过），不能据此判定失效。

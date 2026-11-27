@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-11-09
+updated: 2026-11-27
 ---
 
 # Wiki 索引
@@ -59,3 +59,4 @@ updated: 2026-11-09
 - [优雅停止与可中断登录](queries/graceful-shutdown-login-abort.md) — supervisor 先 SIGTERM 后强杀、扫码登录响应退出信号与二次信号兜底。
 - [全库审查问题修复](queries/full-repo-review-fixes.md) — 332 条审查意见的确认项、误报核对与状态/配置/调度/会话修复。
 - [1.7.5 发布记录](queries/release-1-7-5.md) — 审查修复补丁版发版、CI 三平台与 npm 实际结果。
+- [升级 pi 核心到 1.6.1](queries/pi-core-1-6-1-upgrade.md) — 破坏性变更核对、凭据写入收尾、session_start 实测与 undici 告警解除。

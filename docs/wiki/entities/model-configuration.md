@@ -3,7 +3,7 @@ title: 供应方读取与会话模型配置
 type: entity
 tags: [模型, 安装, 配置]
 created: 2026-09-30
-updated: 2026-10-26
+updated: 2026-11-27
 status: active
 ---
 
@@ -23,7 +23,7 @@ status: active
 
 ## 上下游依赖
 
-复用 pi SDK 1.4.0 的模型和鉴权接口：升级前后 `getAgentDir`、`ModelRuntime` 调用方式一致，无需改动。默认目录为 ~/.pi/agent，PI_CODING_AGENT_DIR 可覆盖；PI_WEIXIN_MODEL 优先于 config.json 的安装默认值。不向外部服务探测模型可用性，鉴权与网络是否可用以实际任务为准。SDK 1.4.0 要求 Node ≥22.19.0，`engines.node` 已同步。
+复用 pi SDK 1.6.1 的模型和鉴权接口：`getAgentDir`、`ModelRuntime` 的读取与刷新调用方式与 1.4.0 一致，无需改动业务逻辑。默认目录为 ~/.pi/agent，PI_CODING_AGENT_DIR 可覆盖；PI_WEIXIN_MODEL 优先于 config.json 的安装默认值。不向外部服务探测模型可用性，鉴权与网络是否可用以实际任务为准。SDK 1.6.1 仍要求 Node ≥22.19.0，`engines.node` 已同步。退出时 `PiSessionManager.settleCredentialWrites()` 转发 SDK 的 `settleCredentialWrites()`，等待后台刷新轮换的 OAuth 令牌写入磁盘，见[升级 pi 核心到 1.6.1](../queries/pi-core-1-6-1-upgrade.md)。
 
 ## 重要变更记录
 
